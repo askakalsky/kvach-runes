@@ -1,0 +1,55 @@
+// Keyboard + floating touch joystick.
+export const input = { useQ: 0, enabled: false };
+export const joy = { active: false, id: null, ox: 0, oy: 0, kx: 0, ky: 0 };
+const keys = new Set();
+const JR = 56;
+
+export function initInput(canvas, onFirst) {
+  addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    onFirst();
+    keys.add(e.code);
+    if (['Space', 'KeyE', 'KeyJ', 'ShiftLeft', 'ShiftRight', 'Enter'].includes(e.code) && !e.repeat && input.enabled) input.useQ++;
+    if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
+  });
+  addEventListener('keyup', e => keys.delete(e.code));
+  addEventListener('blur', () => { keys.clear(); joy.active = false; });
+
+  canvas.addEventListener('pointerdown', e => {
+    onFirst();
+    if (!input.enabled || joy.active) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    joy.active = true; joy.id = e.pointerId;
+    joy.ox = joy.kx = e.clientX; joy.oy = joy.ky = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!joy.active || e.pointerId !== joy.id) return;
+    let dx = e.clientX - joy.ox, dy = e.clientY - joy.oy;
+    const l = Math.hypot(dx, dy);
+    if (l > JR) { joy.ox += dx * (1 - JR / l); joy.oy += dy * (1 - JR / l); dx = e.clientX - joy.ox; dy = e.clientY - joy.oy; }
+    joy.kx = e.clientX; joy.ky = e.clientY;
+    e.preventDefault();
+  });
+  const end = e => { if (e.pointerId === joy.id) { joy.active = false; joy.id = null; } };
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+}
+
+export function readMove() {
+  let x = 0, y = 0;
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) x -= 1;
+  if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
+  if (keys.has('KeyW') || keys.has('ArrowUp')) y -= 1;
+  if (keys.has('KeyS') || keys.has('ArrowDown')) y += 1;
+  if (x || y) { const l = Math.hypot(x, y); return { x: x / l, y: y / l }; }
+  if (joy.active) {
+    let dx = (joy.kx - joy.ox) / JR, dy = (joy.ky - joy.oy) / JR;
+    const l = Math.hypot(dx, dy);
+    if (l < 0.18) return { x: 0, y: 0 };
+    const m = Math.min(1, (l - 0.1) / 0.6);
+    return { x: dx / l * m, y: dy / l * m };
+  }
+  return { x: 0, y: 0 };
+}

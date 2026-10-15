@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#16181b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="description" content="Квач с рунами: пиксельная мультиплеерная догонялка в браузере">
+<title>Квач: Рунные бега</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="board"></div>
+  <div id="top"><div id="timer">3:00</div><div id="sub"></div></div>
+  <div id="side">
+    <canvas id="mini"></canvas>
+    <div id="tools"><button id="muteBtn" title="Звук">♪</button><button id="exitBtn" title="Выйти">✕</button></div>
+  </div>
+  <div id="banner"></div>
+  <div id="center"></div>
+  <button id="runeBtn"><canvas id="runeIcon" width="11" height="11"></canvas><span id="runeName">нет руны</span></button>
+  <div id="keysHint">WASD — бег · ПРОБЕЛ — руна</div>
+</div>
+
+<div id="menu" class="screen">
+  <div class="panel">
+    <h1>КВАЧ<small>рунные бега</small></h1>
+    <div class="who">
+      <canvas id="preview" width="24" height="26"></canvas>
+      <div class="whoR">
+        <input id="nameIn" maxlength="12" placeholder="Имя" autocomplete="off">
+        <div id="colors"></div>
+        <button id="hairBtn" class="ghost small">Причёска ↻</button>
+      </div>
+    </div>
+    <button id="soloBtn" class="big">Играть с ботами</button>
+    <button id="hostBtn" class="big">Создать комнату</button>
+    <div class="row"><input id="codeIn" placeholder="КОД" maxlength="4" autocomplete="off" autocapitalize="characters"><button id="joinBtn">Войти</button></div>
+    <button id="helpBtn" class="ghost">Как играть</button>
+  </div>
+</div>
+
+<div id="lobby" class="screen hidden">
+  <div class="panel">
+    <h2 id="lobbyTitle">Комната</h2>
+    <div id="roomBox">
+      <div class="lbl">Код комнаты</div>
+      <div id="roomCode">····</div>
+      <button id="shareBtn">Пригласить друга</button>
+    </div>
+    <div id="roster"></div>
+    <div id="hostOpts">
+      <label>Режим
+        <select id="modeSel">
+          <option value="classic">Классика</option>
+          <option value="bomb">Горячая картошка</option>
+          <option value="infect">Заражение</option>
+        </select>
+      </label>
+      <label>Боты <input type="range" id="botsIn" min="0" max="7" value="3"><b id="botsVal">3</b></label>
+      <label>Время
+        <select id="durSel">
+          <option value="120">2 мин</option>
+          <option value="180" selected>3 мин</option>
+          <option value="300">5 мин</option>
+        </select>
+      </label>
+    </div>
+    <p id="modeDesc"></p>
+    <p id="clientMode" class="hidden"></p>
+    <button id="startBtn" class="big">СТАРТ</button>
+    <p id="waitMsg" class="hidden">Ждём, пока хост начнёт…</p>
+    <button id="leaveBtn" class="ghost">Назад</button>
+  </div>
+</div>
+
+<div id="results" class="screen hidden">
+  <div class="panel">
+    <h2 id="resTitle"></h2>
+    <ol id="resList"></ol>
+    <div id="resBtns"><button id="againBtn" class="big">Ещё раунд</button><button id="toLobbyBtn" class="ghost">В лобби</button></div>
+    <p id="resWait">Ждём хоста…</p>
+  </div>
+</div>
+
+<div id="help" class="screen hidden">
+  <div class="panel wide">
+    <h2>Как играть</h2>
+    <p>Один игрок — <b class="red">квач</b>. Он догоняет, остальные убегают. Коснулся — квачом стал другой. Только что пойманный на секунду оглушён, а прошлый квач секунду неуязвим.</p>
+    <p><b>Телефон:</b> веди пальцем по экрану — появится джойстик. Большая кнопка справа — использовать руну.<br><b>Комп:</b> WASD или стрелки, руна — ПРОБЕЛ / E.</p>
+    <h3>Режимы</h3><ul id="helpModes"></ul>
+    <h3>Руны</h3><p>Светящиеся камни. Подбери, держи одну, используй в нужный момент.</p><ul id="helpRunes" class="runes"></ul>
+    <h3>Рассказчик</h3><p>Как в RimWorld: каждые ~40 секунд рассказчик устраивает событие.</p><ul id="helpEvents"></ul>
+    <h3>Карта</h3>
+    <ul>
+      <li><b>Кусты</b> — в них тебя не видно издалека.</li>
+      <li><b>Вода</b> замедляет, <b>лёд</b> скользкий.</li>
+      <li><b>Порталы</b> (фиолетовые круги) переносят на другой конец карты.</li>
+      <li>Стрелки по краям экрана показывают, где квач (или ближайшая жертва).</li>
+    </ul>
+    <button id="helpBack" class="big">Понятно</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
