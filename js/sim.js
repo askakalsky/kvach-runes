@@ -89,7 +89,7 @@ export const MODES = {
   ctf:     { name: 'Захват флага', desc: 'Две команды. Утащи чужой флаг к себе на базу. На своей половине касанием отправляешь врага в тюрьму. До 3 очков.' },
   hide:    { name: 'Прятки', desc: '30 секунд прячься! Потом гаснет свет, и водящий ищет с фонариком. Найденные начинают искать вместе с ним.' },
   koth:    { name: 'Король горы', desc: 'Стой в золотом круге один — копишь очки. Толкай соперников кнопкой «Толчок». Круг иногда переезжает. До 45 очков.' },
-  dm:      { name: 'Майами', desc: 'Deathmatch в неоновом здании. Подбирай пушки, биты и катаны — всё убивает с одного удара. Кулаки сбивают с ног. Серии убийств дают КОМБО. До 20 убийств.' },
+  dm:      { name: 'Майами', desc: 'Deathmatch в тёмном неоновом здании: видно только то, что выхватывает фонарь, а каждый выстрел выдаёт стрелка. Подбирай пушки, биты и катаны — всё убивает с одного удара. Кулаки сбивают с ног. Серии убийств дают КОМБО. До 20 убийств.' },
   pacman:  { name: 'Пакмен', desc: 'Лабиринт с точками и мобами. Ешь точки, бери суперточки — и сам охоться на мобов! 3 жизни, больше всех очков — победа.' },
 };
 export const EVENTS = {
@@ -656,7 +656,7 @@ export class Sim {
       return;
     }
     if (p.ammo <= 0) { p.fireCd = 0.35; this.fx('empty', p.x, p.y, { id: p.id }); return; }
-    p.ammo--; p.fireCd = w.rate;
+    p.ammo--; p.fireCd = w.rate; p.flashT = 0.45;
     const ends = [], base = Math.atan2(ay, ax);
     for (let k = 0; k < w.pellets; k++) {
       const a = base + (Math.random() - 0.5) * 2 * w.spread, dx = Math.cos(a), dy = Math.sin(a);
@@ -713,6 +713,13 @@ export class Sim {
     p.wpn = 'fist'; p.ammo = 0; p.fireCd = 0.25;
     this.fx('throw', p.x, p.y, { id: p.id, ax: r2(ax), ay: r2(ay) });
   }
+  // in the dark you only see what your flashlight hits, who is right next to you, or who just fired
+  seenInDark(p, q) {
+    const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1;
+    if (d < 40 || ((q.flashT || 0) > 0 && d < 260)) return true;
+    const ax = p.aimx ?? p.fdx, ay = p.aimy ?? p.fdy;
+    return d < 165 && (dx * ax + dy * ay) / d > 0.8;
+  }
   takePickup(p, k) {
     if (p.wpn !== 'fist') this.dropWeapon(p, 0);
     p.wpn = k.k; p.ammo = k.ammo; p.fireCd = 0.15;
@@ -722,7 +729,7 @@ export class Sim {
   updateDM(dt) {
     for (const p of this.players) {
       if (!p.alive) { if (p.dead > 0) { p.dead -= dt; if (p.dead <= 0 && this.phase === 'play') this.respawnDM(p); } continue; }
-      p.fireCd -= dt; p.down = Math.max(0, p.down - dt);
+      p.fireCd -= dt; p.down = Math.max(0, p.down - dt); p.flashT = Math.max(0, (p.flashT || 0) - dt);
       if (p.comboT > 0) { p.comboT -= dt; if (p.comboT <= 0) p.combo = 0; }
       if (p.fire && p.fireCd <= 0) this.attack(p);
       if (p.wpn === 'fist' && p.down <= 0) {
@@ -753,7 +760,7 @@ export class Sim {
     if (ai.th <= 0) {
       ai.th = 0.15 + Math.random() * 0.1;
       let ne = null, nd = 1e9;
-      for (const q of this.players) if (q !== p && q.alive && q.fx.invis <= 0) { const d = d2(p, q); if (d < nd && d < 240 * 240 && this.los(p.x, p.y - 6, q.x, q.y - 6)) { nd = d; ne = q; } }
+      for (const q of this.players) if (q !== p && q.alive && q.fx.invis <= 0) { const d = d2(p, q); if (d < nd && d < 260 * 260 && this.seenInDark(p, q) && this.los(p.x, p.y - 6, q.x, q.y - 6)) { nd = d; ne = q; } }
       ai.ne = ne; ai.nd = Math.sqrt(nd);
       if (!ne) ai.react = 0.25 + Math.random() * 0.25;
       if (!w.melee && p.ammo <= 0) { if (ne && ai.nd < 140) { p.aimx = (ne.x - p.x) / ai.nd; p.aimy = (ne.y - p.y) / ai.nd; } this.throwWeapon(p); }
@@ -1300,7 +1307,7 @@ export class Sim {
         if (bomber) { o.bo = p.boots; o.pw = [p.maxB, p.range]; }
         if (this.mode === 'ctf') { o.tm = p.team; o.c = p.carry; }
         if (p.hero) { o.h = p.hero; o.cd = r1(p.abilCd); }
-        if (this.mode === 'dm') { o.w = p.wpn; o.am = p.ammo; o.dn = p.down > 0 ? 1 : 0; o.pt = p.pts; }
+        if (this.mode === 'dm') { o.w = p.wpn; o.am = p.ammo; o.dn = p.down > 0 ? 1 : 0; o.pt = p.pts; o.fl = (p.flashT || 0) > 0 ? 1 : 0; }
         return o;
       }),
       ru: this.runes.map(r => [r.id, r.x, r.y, r.k]),

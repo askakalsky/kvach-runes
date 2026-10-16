@@ -400,6 +400,12 @@ function losMap(x0, y0, x1, y1) {
   for (let i = 1; i < n; i++) { const ti = tileIdx(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n); if (isSolidT(map.g[ti]) || map.dyn.has(ti)) return false; }
   return true;
 }
+// deathmatch is dark: you see what your flashlight hits, who is close, or who just fired
+function seenInDark(p, q, d) {
+  if (d < 40 || ((q.fl || q.flashT > 0) && d < 260)) return true;
+  const fl = Math.hypot(p.fdx || 0, p.fdy || 0) || 1;
+  return d < 165 && ((q.x - p.x) * (p.fdx || 0) + (q.y - p.y) * (p.fdy || 0)) / (d * fl) > 0.8;
+}
 // mouse aim on desktop; otherwise auto-aim at the nearest visible enemy, else where you run
 function aimFor(p, v) {
   if (!p) return [0, 1];
@@ -412,6 +418,7 @@ function aimFor(p, v) {
     for (const q of v.players) {
       if (q.id === p.id || !q.alive) continue;
       const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+      if (v.mode === 'dm' && !seenInDark(p, q, Math.sqrt(d))) continue;
       if (d < bd && losMap(p.x, p.y - 6, q.x, q.y - 6)) { bd = d; best = q; }
     }
     if (best) { const l = Math.sqrt(bd) || 1; return [(best.x - p.x) / l, (best.y - p.y) / l]; }
@@ -495,7 +502,7 @@ function handleFx(f) {
     case 'shot': {
       for (const [ex, ey] of f.e) { FX().tracer(f.x, f.y, ex, ey); FX().burst(ex, ey, '#fff3b0', 3, 30, 0.2); }
       FX().burst(f.x + (f.e[0][0] - f.x) * 0.06, f.y + (f.e[0][1] - f.y) * 0.06, '#ffd23f', 5, 40, 0.12);
-      FX().shell(f.x, f.y + 6);
+      FX().shell(f.x, f.y + 6); FX().muzzle(f.x, f.y);
       FX().anim(f.id, 'shoot', 0.12);
       A.sfx(f.w, Math.max(0.25, vol));
       if (mine) FX().shake = Math.max(FX().shake, f.w === 'shotgun' ? 0.6 : 0.2);
@@ -830,7 +837,7 @@ function clientView(now) {
     }
     const lp = lerpPos(q.i, 'p', 0);
     const src = lp ? lp[2] : q;
-    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, ghost: !!q.g, score: q.s, rune: q.r, fx: q.f || {}, lives: q.l, z: q.z || 0, stairs: q.st || 0, team: q.tm ?? -1, carry: q.c ?? -1, wpn: q.w || 'fist', ammo: q.am || 0, down: q.dn || 0, pts: q.pt || 0, hero: q.h || null, cd: q.cd || 0, seed: q.i.length };
+    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, ghost: !!q.g, score: q.s, rune: q.r, fx: q.f || {}, lives: q.l, z: q.z || 0, stairs: q.st || 0, team: q.tm ?? -1, carry: q.c ?? -1, wpn: q.w || 'fist', ammo: q.am || 0, down: q.dn || 0, fl: q.fl || 0, pts: q.pt || 0, hero: q.h || null, cd: q.cd || 0, seed: q.i.length };
   });
   const decoys = L.de.map(d => {
     const lp = lerpPos(d[0], 'de', 1);

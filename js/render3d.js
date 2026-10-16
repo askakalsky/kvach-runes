@@ -175,6 +175,11 @@ export class Renderer3D {
   tracer(x0, y0, x1, y1) { this.tracers.push({ x0, y0, x1, y1, t: 0.09 }); }
   blood(x, y) { this.bloods.push([x, y, 0.6 + Math.random() * 0.5]); if (this.bloods.length > 150) this.bloods.shift(); }
   shell() { }
+  muzzle(x, y) {
+    if (!this.mz) { this.mz = []; for (let i = 0; i < 3; i++) { const l = new THREE.PointLight('#ffe8a0', 0, 7, 1.2); this.scene.add(l); this.mz.push({ l, t: 0 }); } }
+    const slot = this.mz.reduce((a, b) => a.t < b.t ? a : b);
+    slot.t = 0.08; slot.l.position.set(U(x), 0.9, U(y));
+  }
   screenToWorld(sx, sy) {
     this.ray.setFromCamera(new THREE.Vector2(sx / innerWidth * 2 - 1, -(sy / innerHeight) * 2 + 1), this.camera);
     const o = this.ray.ray.origin, d = this.ray.ray.direction;
@@ -379,22 +384,25 @@ export class Renderer3D {
     if (ev === 'spirits') { amb *= 0.45; sun *= 0.4; myL = 3; }
     const hiding = v.mode === 'hide' && v.phase === 'play';
     if (hiding) { amb = 0.05; sun = 0; myL = 2.2; }
+    const dmDark = v.mode === 'dm';
+    if (dmDark) { amb = 0.06; sun = 0; myL = 1.4; }
     if (me && me.fx && me.fx.blind > 0) { amb = 0.03; sun = 0; myL = 1.2; }
     if (hiding && me && me.it && v.hideT > 0) { amb = 0; myL = 0; }
     this.amb.intensity = amb; this.amb.color.set(this.base.ambCol); this.sun.intensity = sun;
     this.scene.fog = fog ? new THREE.Fog(fog[0], fog[1], fog[2]) : null;
     if (me) { this.myLight.position.set(U(me.x), (me.z === 1 ? 1.4 : 0) + 1.6, U(me.y)); }
     this.myLight.intensity = myL;
-    const seekers = hiding ? v.players.filter(p => p.alive && p.it) : [];
+    const seekers = hiding ? v.players.filter(p => p.alive && p.it) : dmDark ? v.players.filter(p => p.alive) : [];
     while (this.spots.length < seekers.length) { const s2 = new THREE.SpotLight('#fff6c0', 0, 11, 0.6, 0.4, 1); this.scene.add(s2, s2.target); this.spots.push(s2); }
     this.spots.forEach((s2, i) => {
       const p = seekers[i];
-      s2.intensity = p ? 40 : 0;
+      s2.intensity = p ? (dmDark ? 34 : 40) : 0; s2.distance = dmDark ? 13 : 11;
       if (p) { const h = (p.z === 1 ? 1.4 : 0) + 0.9; s2.position.set(U(p.x), h, U(p.y)); s2.target.position.set(U(p.x) + p.fdx * 4, 0, U(p.y) + p.fdy * 4); }
     });
 
     // world animation & dynamic instanced sets
     for (const pt of this.portals) pt.rotation.y += dt * 2;
+    if (this.mz) for (const m of this.mz) { m.t = Math.max(0, m.t - dt); m.l.intensity = m.t > 0 ? 8 : 0; }
     if (this.beltTex) this.beltTex.offset.x = -((t * BELT_SPEED / TS) % 1);
     if (this.lights) { const ph = Math.floor(t * 2); const cols = ['#ff4a3b', '#ffd23f', '#4ad0ff', '#7dff5a', '#ff7ad9']; for (let k = 0; k < this.lights.count; k++) this.lights.setColorAt(k, new THREE.Color(cols[(k + ph) % 5])); this.lights.instanceColor.needsUpdate = true; }
     if (this.crateN !== map.crates.size) {
@@ -557,7 +565,7 @@ export class Renderer3D {
     g.textAlign = 'center';
     g.font = `${Math.round(9 * d)}px "Press Start 2P", monospace`;
     for (const p of ents) {
-      if (hiddenFor(p) || (hiding && p.id !== v.me && !(me && Math.hypot(me.x - p.x, me.y - p.y) < 50))) continue;
+      if (hiddenFor(p) || ((hiding || dmDark) && p.id !== v.me && !(me && Math.hypot(me.x - p.x, me.y - p.y) < 50))) continue;
       const [nx, ny, ok] = this.project(p.x, p.y, (hOf(p) * TS) + 30);
       if (!ok) continue;
       let nm = (p.hero && HEROES[p.hero] ? HEROES[p.hero].icon + ' ' : '') + (p.name || '');

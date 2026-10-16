@@ -1,5 +1,5 @@
 // Pixel-art renderer: prerendered map layers, pawns, cosmetics, mode props, particles, lighting.
-import { TS, MW, MH, T, rng, isHideT, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED } from './map.js';
+import { TS, MW, MH, T, rng, isHideT, isSolidT, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED } from './map.js';
 import { RUNES, GLYPHS, ITEMS, TEAM_COLS, MOB_COLS, HEROES, EMOTES } from './sim.js';
 import { CAPES } from './skins.js';
 
@@ -510,11 +510,11 @@ export class Renderer {
     this.pings = []; this.parts = []; this.texts = []; this.flames = []; this.bats = []; this.prints = []; this.flakes = []; this.lastPrint = new Map();
     this.cam = { x: 0, y: 0 }; this.shake = 0; this.zoom = 3;
     this.layers = null;
-    this.anims = new Map(); this.flashes = new Map(); this.tracers = [];
+    this.anims = new Map(); this.flashes = new Map(); this.tracers = []; this.muzzles = [];
   }
   setMap(map, seed) {
     this.map = map; this.layers = buildLayers(map, seed);
-    this.decal = mk(MW * TS, MH * TS); this.anims = new Map(); this.flashes = new Map(); this.tracers = [];
+    this.decal = mk(MW * TS, MH * TS); this.anims = new Map(); this.flashes = new Map(); this.tracers = []; this.muzzles = [];
     this.pings = []; this.parts = []; this.texts = []; this.flames = []; this.bats = []; this.prints = []; this.flakes = []; this.lastPrint.clear(); this.camInit = false;
     this.spiral = map.type === 'arena' ? arenaSpiral() : [];
   }
@@ -539,6 +539,7 @@ export class Renderer {
   anim(id, k, dur, ax, ay) { this.anims.set(id, { k, t: dur, dur, ax, ay }); }
   hurt(id) { this.flashes.set(id, 0.14); this.anim(id, 'hurt', 0.25); }
   tracer(x0, y0, x1, y1) { this.tracers.push({ x0, y0, x1, y1, t: 0.09 }); }
+  muzzle(x, y) { this.muzzles.push({ x, y, t: 0.08 }); }
   screenToWorld(sx, sy) { return [sx * this.dpr / this.zoom + (this.lastCx || 0), sy * this.dpr / this.zoom + (this.lastCy || 0)]; }
   // blood splatter stays on the floor for the whole round
   blood(x, y, dx = 0, dy = 0) {
@@ -920,6 +921,7 @@ export class Renderer {
       for (const p of v.players) if (p.alive && p.it) cones.push(p);
       if (me && me.it && v.hideT > 0) dark = { col: '0,0,0', a: 1, r: 0 };
     }
+    if (v.mode === 'dm') { dark = { col: '4,1,10', a: 0.95, r: 26 }; for (const p of v.players) if (p.alive) cones.push(p); }
     if (me && me.fx && me.fx.blind > 0) dark = { col: '10,6,16', a: 0.96, r: 36 };
     if (dark) {
       g.setTransform(1, 0, 0, 1, 0, 0);
@@ -934,6 +936,7 @@ export class Renderer {
         for (const r of v.runes) lights.push([r.x, r.y - 4, 14]);
         for (const b of v.bombs) lights.push([b.x, b.y, 14]);
       }
+      for (const mz of this.muzzles) lights.push([mz.x, mz.y, 80]);
       for (const [lx, ly, lr] of lights) {
         const px = (lx - cx) * z, py = (ly - cy) * z, rr = lr * z;
         const gr = d.createRadialGradient(px, py, rr * 0.25, px, py, rr);
@@ -941,10 +944,19 @@ export class Renderer {
         d.fillStyle = gr; d.fillRect(px - rr, py - rr, rr * 2, rr * 2);
       }
       if (dark.a < 1) for (const p of cones) {
-        const px = (p.x - cx) * z, py = (p.y - 8 - cy) * z, rr = 130 * z, ang = Math.atan2(p.fdy, p.fdx);
+        const px = (p.x - cx) * z, py = (p.y - 8 - cy) * z, rr = (v.mode === 'dm' ? 165 : 130) * z, ang = Math.atan2(p.fdy, p.fdx);
         const gr = d.createRadialGradient(px, py, 0, px, py, rr);
         gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.7, 'rgba(0,0,0,.85)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
-        d.fillStyle = gr; d.beginPath(); d.moveTo(px, py); d.arc(px, py, rr, ang - 0.6, ang + 0.6); d.closePath(); d.fill();
+        // flashlight beam stops at walls: fan of rays, each ending at the first solid tile
+        d.fillStyle = gr; d.beginPath(); d.moveTo(px, py);
+        const len = rr / z, ox = p.x, oy = p.y - 8;
+        for (let k = 0; k <= 28; k++) {
+          const a = ang - 0.6 + 1.2 * k / 28, dx = Math.cos(a), dy = Math.sin(a);
+          let s2 = 4;
+          for (; s2 < len; s2 += 4) { const ti = Math.floor((oy + dy * s2) / TS) * MW + Math.floor((ox + dx * s2) / TS); if (ti < 0 || ti >= MW * MH || isSolidT(this.map.g[ti]) || this.map.dyn.has(ti)) { s2 += 3; break; } }
+          d.lineTo(px + dx * Math.min(s2, len) * z, py + dy * Math.min(s2, len) * z);
+        }
+        d.closePath(); d.fill();
         const h2 = d.createRadialGradient(px, py, 0, px, py, 30 * z);
         h2.addColorStop(0, 'rgba(0,0,0,1)'); h2.addColorStop(1, 'rgba(0,0,0,0)');
         d.fillStyle = h2; d.fillRect(px - 30 * z, py - 30 * z, 60 * z, 60 * z);
@@ -985,6 +997,13 @@ export class Renderer {
     }
     world();
 
+    // in the dark deathmatch, bullets and muzzle flashes glow above the darkness
+    if (dm) {
+      for (const mz of this.muzzles) { mz.t -= dt; g.globalAlpha = Math.max(0, mz.t / 0.08); disc(g, '#fff3b0', Math.round(mz.x), Math.round(mz.y), 3); }
+      this.muzzles = this.muzzles.filter(mz => mz.t > 0);
+      for (const tr of this.tracers) { g.globalAlpha = Math.max(0, tr.t / 0.09) * 0.9; g.strokeStyle = '#fff6a0'; g.lineWidth = 1; g.beginPath(); g.moveTo(tr.x0, tr.y0); g.lineTo(tr.x1, tr.y1); g.stroke(); }
+      g.globalAlpha = 1;
+    } else this.muzzles = [];
     g.font = '7px "Press Start 2P", monospace';
     for (const q of this.texts) {
       q.life -= dt; q.y -= dt * 14;
@@ -1078,7 +1097,7 @@ export class Renderer {
     for (const i of v.walls) g.fillRect((i % MW) * 3, ((i / MW) | 0) * 3, 3, 3);
     if (this.map.pellets.size) { g.fillStyle = '#ffd9a0'; for (const i of this.map.pellets) g.fillRect((i % MW) * 3 + 1, ((i / MW) | 0) * 3 + 1, 1, 1); }
     g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(0, 0, c.width, c.height);
-    const blindMap = v.event === 'night' || v.event === 'fog' || v.event === 'blizzard' || v.mode === 'hide';
+    const blindMap = v.event === 'night' || v.event === 'fog' || v.event === 'blizzard' || v.mode === 'hide' || v.mode === 'dm';
     if (blindMap) { g.fillStyle = 'rgba(0,0,20,.7)'; g.fillRect(0, 0, c.width, c.height); }
     const dot = (x, y, col, s = 3) => { const tx = Math.floor(x / TS) * 3, ty = Math.floor(y / TS) * 3; g.fillStyle = '#000'; g.fillRect(tx - 1, ty - 1, s + 2, s + 2); g.fillStyle = col; g.fillRect(tx, ty, s, s); };
     for (const r of v.runes) { g.fillStyle = RUNES[r.k].col; g.fillRect(Math.floor(r.x / TS) * 3 + 1, Math.floor(r.y / TS) * 3 + 1, 1, 1); }
