@@ -2,7 +2,7 @@
 // uses the 2D canvas on top as an overlay for particles, names and floating text.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 import { TS, MW, MH, T, isHideT, arenaSpiral, isWinter, BELT_SPEED } from './map.js';
-import { RUNES, ITEMS, TEAM_COLS, MOB_COLS, HEROES, EMOTES } from './sim.js';
+import { RUNES, ITEMS, TEAM_COLS, MOB_COLS, HEROES, EMOTES, WEAPONS } from './sim.js';
 import { CAPES } from './skins.js';
 
 const U = v => v / TS;           // pixels -> tile units
@@ -122,8 +122,9 @@ function makePawn(p, theme) {
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; ring.visible = false; root.add(ring);
   const flag = new THREE.Group(); flag.add(box(0.05, 0.9, 0.05, lam('#d8d0c0'), 0, 0.45, 0)); const cloth = box(0.4, 0.26, 0.03, lam('#ffffff'), 0.22, 0.75, 0); flag.add(cloth);
   flag.position.set(0.25, 0.9, -0.15); flag.visible = false; root.add(flag);
+  const gun = box(0.09, 0.09, 0.5, lam('#3a3a44'), 0, -0.17, 0.22); gun.visible = false; armR.add(gun);
   const all = [legL, legR, armL, armR, face, eyeL, eyeR, pumpkinHead, ...head.children.filter(c => c !== face && c !== eyeL && c !== eyeR)];
-  return { root, body, legL, legR, armL, armR, head, torso, cape, pumpkinHead, marker, bomb, shield, ice, ring, flag, cloth, all, orig: all.map(o => o.material), hatKey: null, hat: null, key: '' };
+  return { root, body, legL, legR, armL, armR, head, torso, cape, pumpkinHead, marker, bomb, shield, ice, ring, flag, cloth, all, gun, orig: all.map(o => o.material), hatKey: null, hat: null, key: '' };
 }
 
 function ghostMesh(col) {
@@ -151,6 +152,7 @@ export class Renderer3D {
     this.cam = new THREE.Vector3(); this.camInit = false;
     this.world = null;
     this.pawns = new Map();
+    this.anims = new Map(); this.tracers = []; this.bloods = []; this.ray = new THREE.Raycaster();
   }
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -168,17 +170,29 @@ export class Renderer3D {
   ring(x, y, col, r = 50) { for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; this.parts.push({ x, y, h: 4, vx: Math.cos(a) * r * 2, vy: Math.sin(a) * r * 2, vh: 0, life: 0.45, max: 0.45, col, size: 2 }); } }
   text(x, y, txt, col = '#fff') { this.texts.push({ x, y, h: 28, txt, col, life: 1.2 }); }
   ping(x, y, col = '#ffe14a') { this.pings.push({ x, y, col, life: 1.6 }); }
+  anim(id, k, dur) { this.anims.set(id, { k, t: dur, dur }); }
+  hurt(id) { this.anim(id, 'hurt', 0.25); }
+  tracer(x0, y0, x1, y1) { this.tracers.push({ x0, y0, x1, y1, t: 0.09 }); }
+  blood(x, y) { this.bloods.push([x, y, 0.6 + Math.random() * 0.5]); if (this.bloods.length > 150) this.bloods.shift(); }
+  shell() { }
+  screenToWorld(sx, sy) {
+    this.ray.setFromCamera(new THREE.Vector2(sx / innerWidth * 2 - 1, -(sy / innerHeight) * 2 + 1), this.camera);
+    const o = this.ray.ray.origin, d = this.ray.ray.direction;
+    if (Math.abs(d.y) < 1e-4) return null;
+    const k = (0.4 - o.y) / d.y;
+    return k > 0 ? [(o.x + d.x * k) * TS, (o.z + d.z * k) * TS] : null;
+  }
   blast(tiles) { this.flames.push({ tiles, t: 0.5 }); }
 
   setMap(map, seed, layers2d) {
     if (this.world) { this.scene.remove(this.world); this.world.traverse(o => { if (o.geometry && o.geometry !== BOX && o.geometry !== SPH && o.geometry !== CONE && o.geometry !== CYL) o.geometry.dispose(); }); }
     for (const p of this.pawns.values()) this.scene.remove(p.root);
     this.pawns.clear();
-    this.map = map; this.camInit = false; this.parts = []; this.texts = []; this.flames = [];
+    this.map = map; this.camInit = false; this.parts = []; this.texts = []; this.flames = []; this.bloods = []; this.tracers = [];
     const th = map.theme, win = isWinter(th), pac = map.type === 'pacman', hw = th === 'halloween';
     const tx = textures();
     const W = new THREE.Group(); this.world = W; this.scene.add(W);
-    this.scene.background = new THREE.Color(pac ? '#000000' : hw ? '#1a1024' : win ? '#c8d8e6' : map.type === 'magic' ? '#24303a' : '#9ec4de');
+    this.scene.background = new THREE.Color(pac || map.type === 'neon' ? '#0a0612' : hw ? '#1a1024' : win ? '#c8d8e6' : map.type === 'magic' ? '#24303a' : '#9ec4de');
     this.base = { amb: pac ? 0.9 : hw ? 0.8 : 1.4, sun: pac ? 0.6 : hw ? 0.9 : 1.8, ambCol: hw ? '#b8a0ff' : map.type === 'magic' ? '#a8d8ff' : '#ffffff' };
 
     // ground: reuse the pixel-art ground from the 2D renderer
@@ -201,8 +215,8 @@ export class Renderer3D {
     const topped = (side, top) => [side, side, top, side, side, side];
     const snowTop = new THREE.MeshLambertMaterial({ map: tx.snow });
 
-    const wallMat = pac ? new THREE.MeshLambertMaterial({ map: tx.neon, emissive: '#0a1a5a' }) : new THREE.MeshLambertMaterial({ map: tx.stone });
-    inst(tiles[T.WALL], win && !pac ? topped(wallMat, snowTop) : wallMat, (m, k, x, y) => place(m, k, x + 0.5, (pac ? 0.6 : 1.3) / 2, y + 0.5, 1, pac ? 0.6 : 1.3, 1));
+    const wallMat = map.type === 'neon' ? [new THREE.MeshLambertMaterial({ color: '#2a1838' }), new THREE.MeshLambertMaterial({ color: '#2a1838' }), new THREE.MeshLambertMaterial({ color: '#ff3fa4', emissive: '#801850' }), new THREE.MeshLambertMaterial({ color: '#2a1838' }), new THREE.MeshLambertMaterial({ color: '#2ff3ff', emissive: '#105a60' }), new THREE.MeshLambertMaterial({ color: '#2a1838' })] : pac ? new THREE.MeshLambertMaterial({ map: tx.neon, emissive: '#0a1a5a' }) : new THREE.MeshLambertMaterial({ map: tx.stone });
+    inst(tiles[T.WALL], win && !pac && map.type !== 'neon' ? topped(wallMat, snowTop) : wallMat, (m, k, x, y) => place(m, k, x + 0.5, (pac ? 0.6 : 1.3) / 2, y + 0.5, 1, pac ? 0.6 : 1.3, 1));
     const hedgeMat = new THREE.MeshLambertMaterial({ map: tx.hedge });
     inst(tiles[T.HEDGE], win ? topped(hedgeMat, snowTop) : hedgeMat, (m, k, x, y) => place(m, k, x + 0.5, 0.55, y + 0.5, 1, 1.1, 1));
     inst(tiles[T.TOMB], new THREE.MeshLambertMaterial({ map: tx.tomb }), (m, k, x, y) => place(m, k, x + 0.5, 0.35, y + 0.55, 0.55, 0.7, 0.18));
@@ -236,12 +250,13 @@ export class Renderer3D {
     inst(tiles[T.BUSH], this.bushMat, (m, k, x, y) => place(m, k, x + 0.5, 0.4, y + 0.5, 0.95, 0.8, 0.95), i => hw ? '#4a6a3a' : map.type === 'magic' ? '#6a5ab0' : win ? '#d8e8e0' : '#3f7a2c');
 
     // decor objects
-    const decoKind = hw || map.type === 'graveyard' ? 'pumpkin' : win ? 'snowman' : map.type === 'beach' ? 'umbrella' : map.type === 'magic' ? 'crystal' : 'barrel';
+    const decoKind = map.type === 'neon' ? 'neon' : hw || map.type === 'graveyard' ? 'pumpkin' : win ? 'snowman' : map.type === 'beach' ? 'umbrella' : map.type === 'magic' ? 'crystal' : 'barrel';
     for (const i of tiles[T.DECOR] || []) {
       const x = i % MW + 0.5, y = ((i / MW) | 0) + 0.5, d = new THREE.Group();
       if (decoKind === 'pumpkin') { const p = new THREE.Mesh(SPH, lam('#d9772e', { emissive: '#5a2a00' })); p.scale.set(0.7, 0.55, 0.7); p.position.y = 0.28; d.add(p, box(0.06, 0.15, 0.06, lam('#4a6b2a'), 0, 0.6, 0)); }
       else if (decoKind === 'snowman') { for (const [r, h] of [[0.6, 0.3], [0.45, 0.75], [0.32, 1.1]]) { const s2 = new THREE.Mesh(SPH, lam('#f4f8fb')); s2.scale.setScalar(r); s2.position.y = h; d.add(s2); } d.add(box(0.08, 0.06, 0.2, lam('#ff8a2a'), 0, 1.1, 0.2)); d.add(box(0.3, 0.25, 0.3, lam('#2a2a2a'), 0, 1.35, 0)); }
       else if (decoKind === 'umbrella') { d.add(box(0.05, 1.2, 0.05, lam('#8a6a44'), 0, 0.6, 0)); const c2 = new THREE.Mesh(CONE, lam('#d8453b')); c2.scale.set(1.3, 0.35, 1.3); c2.position.y = 1.25; d.add(c2); }
+      else if (decoKind === 'neon') { const cols = ['#ff3fa4', '#6a3a1a', '#3fc05a', '#2ff3ff']; d.add(box(0.8, 0.5, 0.8, lam(cols[(i * 7) % 4], { emissive: (i * 7) % 4 === 3 ? '#105a60' : '#000000' }), 0, 0.25, 0)); }
       else if (decoKind === 'crystal') { const c2 = new THREE.Mesh(new THREE.OctahedronGeometry(0.4), lam('#9a7aff', { emissive: '#3a2a8a' })); c2.scale.y = 1.6; c2.position.y = 0.65; d.add(c2); }
       else { const b2 = new THREE.Mesh(CYL, lam('#8b5a2b')); b2.scale.set(0.6, 0.75, 0.6); b2.position.y = 0.38; d.add(b2); }
       d.position.set(x, 0, y); W.add(d);
@@ -316,6 +331,9 @@ export class Renderer3D {
       traps: P(() => { const m = new THREE.Mesh(new THREE.CircleGeometry(0.3, 6), new THREE.MeshBasicMaterial({ color: '#bff2ff', transparent: true, opacity: 0.8 })); m.rotation.x = -Math.PI / 2; m.position.y = 0.04; return m; }),
       flames: P(() => box(0.9, 0.7, 0.9, new THREE.MeshBasicMaterial({ color: '#ff8a2a', transparent: true, opacity: 0.85 }))),
       flags: P(() => { const g = new THREE.Group(); g.add(box(0.06, 1.3, 0.06, lam('#d8d0c0'), 0, 0.65, 0)); const c2 = box(0.55, 0.36, 0.04, lam('#ffffff'), 0.3, 1.1, 0); g.add(c2); const pad = new THREE.Mesh(new THREE.RingGeometry(1, 1.15, 24), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.6, side: THREE.DoubleSide })); pad.rotation.x = -Math.PI / 2; pad.position.y = 0.04; g.add(pad); g.userData.c = c2; g.userData.pad = pad; return g; }),
+      pickups: P(() => { const g = new THREE.Group(); const b2 = box(0.55, 0.1, 0.16, lam('#9a9aa8')); b2.position.y = 0.12; g.add(b2); const r2 = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.42, 16), new THREE.MeshBasicMaterial({ color: '#ff3fa4', transparent: true, opacity: 0.7, side: THREE.DoubleSide })); r2.rotation.x = -Math.PI / 2; r2.position.y = 0.03; g.add(r2); g.userData.b = b2; return g; }),
+      thrown: P(() => box(0.5, 0.1, 0.14, lam('#9a9aa8'))),
+      blood: P(() => { const m = new THREE.Mesh(new THREE.CircleGeometry(0.5, 10), new THREE.MeshBasicMaterial({ color: '#7a0c12', transparent: true, opacity: 0.85, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.position.y = 0.025; return m; }),
       zone: P(() => { const m = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 40), new THREE.MeshBasicMaterial({ color: '#ffd23f', transparent: true, opacity: 0.7, side: THREE.DoubleSide })); m.rotation.x = -Math.PI / 2; m.position.y = 0.05; return m; }),
     };
   }
@@ -438,7 +456,17 @@ export class Renderer3D {
 
     // pawns
     const seen = new Set();
+    for (const [id, a] of this.anims) { a.t -= dt; if (a.t <= 0) this.anims.delete(id); }
+    pl.pickups.sync(v.pickups || [], (o, k) => { o.position.set(U(k.x), 0, U(k.y)); o.rotation.y = t + k.id; o.userData.b.material = lam(WEAPONS[k.k].col); o.userData.b.scale.x = ['rifle', 'shotgun', 'katana', 'bat'].includes(k.k) ? 0.8 : 0.45; });
+    pl.thrown.sync(v.thrown || [], (o, k) => { o.position.set(U(k.x), 0.5, U(k.y)); o.rotation.y = t * 20 + k.id; o.material = lam(WEAPONS[k.k].col); });
+    pl.blood.sync(this.bloods, (o, b) => { o.position.set(U(b[0]), 0.025, U(b[1])); o.scale.setScalar(b[2]); });
     const ents = [...v.players.filter(p => p.alive), ...v.decoys];
+    if (v.mode === 'dm') for (const p of v.players) {
+      if (p.alive || p.ghost) continue;
+      const m = this.pawnFor(p); seen.add(p.id);
+      m.root.visible = true; m.root.position.set(U(p.x), 0.18, U(p.y)); m.root.rotation.x = -Math.PI / 2; m.root.scale.setScalar(1);
+      m.gun.visible = false; m.marker.visible = m.ring.visible = m.shield.visible = false;
+    }
     const hatFor = p => {
       const h = p.skin && p.skin.hat;
       if (h && h !== 'none') return h;
@@ -455,10 +483,26 @@ export class Renderer3D {
       m.root.visible = !hidden;
       if (hidden) continue;
       const f = p.fx || {};
+      m.root.rotation.x = 0;
       m.root.position.set(U(p.x), hOf(p) + (p.stairs ? 0.7 : 0), U(p.y));
       m.body.rotation.y = Math.atan2(p.fdx || 0, p.fdy === undefined ? 1 : p.fdy);
       const sw = p.m ? Math.sin(t * 14 + (p.seed || 0)) * 0.6 : 0;
       m.legL.rotation.x = sw; m.legR.rotation.x = -sw; m.armL.rotation.x = -sw * 0.8; m.armR.rotation.x = sw * 0.8;
+      const held = v.mode === 'dm' && p.wpn && p.wpn !== 'fist';
+      m.gun.visible = !!held;
+      if (held) { m.gun.material = lam(WEAPONS[p.wpn].col); m.gun.scale.z = ['rifle', 'shotgun', 'katana', 'bat'].includes(p.wpn) ? 0.8 : 0.5; m.armR.rotation.x = WEAPONS[p.wpn].melee ? -0.4 : -1.45; }
+      const an = this.anims.get(p.id);
+      if (an) {
+        const e = Math.sin((1 - an.t / an.dur) * Math.PI);
+        if (an.k === 'punch' || an.k === 'shoot' || an.k === 'throw') m.armR.rotation.x = -1.5 - e * 0.2;
+        if (an.k === 'swing') m.armR.rotation.x = -2.6 + (1 - an.t / an.dur) * 2.4;
+        if (an.k === 'push') { m.armR.rotation.x = m.armL.rotation.x = -1.5; }
+        if (an.k === 'cast') { m.armR.rotation.x = m.armL.rotation.x = -2.9; }
+        if (an.k === 'jump') m.root.position.y += e * 0.45;
+        if (an.k === 'crouch') m.body.scale.y = 1 - e * 0.18; else m.body.scale.y = 1;
+        if (an.k === 'hurt') m.root.position.x += (Math.floor(t * 40) % 2 ? 0.05 : -0.05);
+      } else m.body.scale.y = 1;
+      if (v.mode === 'dm' && p.down > 0) { m.root.rotation.x = -1.2; m.root.position.y = 0.15; }
       m.body.position.y = p.m ? Math.abs(Math.sin(t * 14)) * 0.05 : 0;
       const sc = f.tiny > 0 ? 0.6 : 1; m.root.scale.setScalar(sc);
       const col = ctf && p.team >= 0 ? TEAM_COLS[p.team] : v.mode === 'infect' && p.it ? '#5e7a3a' : p.color || '#888888';
@@ -534,6 +578,15 @@ export class Renderer3D {
     }
     g.globalAlpha = 1;
     this.texts = this.texts.filter(q => q.life > 0);
+    for (const tr of this.tracers) {
+      tr.t -= dt;
+      const [ax, ay, ok1] = this.project(tr.x0, tr.y0, 10), [bx, by, ok2] = this.project(tr.x1, tr.y1, 10);
+      if (!ok1 || !ok2) continue;
+      g.globalAlpha = Math.max(0, tr.t / 0.09); g.strokeStyle = '#fff6a0'; g.lineWidth = 2 * d;
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+    }
+    g.globalAlpha = 1;
+    this.tracers = this.tracers.filter(tr => tr.t > 0);
     // whistle pings
     for (const q of this.pings) {
       q.life -= dt;

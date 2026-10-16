@@ -112,8 +112,41 @@ const MEL_NY_B = [
 ];
 let theme = '';
 export function setTheme(t) { theme = t || ''; }
+// "synth": dark synthwave for the Miami deathmatch
+let style = 'chip';
+export function setStyle(s) { style = s || 'chip'; }
+const PROG_SY = [
+  { root: 29, arp: [65, 68, 72] }, { root: 25, arp: [61, 65, 68] },
+  { root: 32, arp: [68, 72, 75] }, { root: 27, arp: [63, 67, 70] },
+];
+const MEL_SY = [
+  [[0, 77, 3], [3, 75, 3], [6, 72, 2], [8, 75, 4], [12, 72, 2], [14, 70, 2]],
+  [[0, 73, 3], [3, 72, 3], [6, 68, 2], [8, 72, 4], [12, 73, 2], [14, 75, 2]],
+  [[0, 75, 3], [3, 72, 3], [6, 68, 2], [8, 72, 4], [12, 75, 2], [14, 79, 2]],
+  [[0, 79, 3], [3, 77, 3], [6, 75, 2], [8, 74, 4], [12, 70, 4]],
+];
+function synthNote(t, freq, dur, type, vol, cutoff, dest, detune = 0) {
+  const o = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t); o.detune.value = detune;
+  f.type = 'lowpass'; f.frequency.setValueAtTime(cutoff * 2.2, t); f.frequency.exponentialRampToValueAtTime(cutoff, t + Math.min(dur, 0.15)); f.Q.value = 4;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.008); g.gain.setValueAtTime(vol * 0.7, t + dur * 0.6); g.gain.linearRampToValueAtTime(0, t + dur);
+  o.connect(f); f.connect(g); g.connect(dest);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+function playSynth(s, t) {
+  const sx = 60 / tempo() / 4, bar = (s >> 4) % 8, st = s % 16, ch = PROG_SY[bar % 4];
+  const BASS = [0, 0, 12, 0, 0, 12, 0, 12, 0, 0, 12, 0, 0, 12, 12, 0];
+  synthNote(t, mf(ch.root + 12 + BASS[st]), sx * 0.9, 'sawtooth', 0.22, 420 + (st % 4) * 90, mus);
+  if (st === 0) for (const n of [ch.arp[0] - 12, ch.arp[1] - 12, ch.arp[2] - 12]) { synthNote(t, mf(n), sx * 16, 'triangle', 0.05, 900, mus); synthNote(t, mf(n), sx * 16, 'sawtooth', 0.025, 700, mus, 9); }
+  if (bar >= 4) synthNote(t, mf(ch.arp[st % 3] + 12), sx * 0.7, 'square', 0.05, 2200, mus);
+  else for (const [ms, n, len] of MEL_SY[bar % 4]) if (ms === st) { synthNote(t, mf(n), sx * len * 0.95, 'sawtooth', 0.07, 1800, mus, -7); synthNote(t, mf(n), sx * len * 0.95, 'square', 0.04, 1600, mus, 7); }
+  if (st % 4 === 0) tone(t, 120, 0.16, 'sine', 0.7, mus, 38);
+  if (st % 8 === 4) { hit(t, 0.18, 0.32, 1300, 'bandpass', mus); hit(t + 0.012, 0.12, 0.2, 1700, 'bandpass', mus); }
+  if (st % 4 === 2) hit(t, 0.05, 0.1, 8000, 'highpass', mus);
+  if (mode === 'hurry' && st % 2 === 1) hit(t, 0.03, 0.06, 9000, 'highpass', mus);
+}
 
-function tempo() { return (mode === 'menu' ? 108 : mode === 'hurry' ? 168 : 138) - (theme === 'halloween' && mode !== 'hurry' ? 10 : 0) + (theme === 'newyear' ? 12 : 0); }
+function tempo() { if (style === 'synth' && mode !== 'menu') return mode === 'hurry' ? 142 : 124; return (mode === 'menu' ? 108 : mode === 'hurry' ? 168 : 138) - (theme === 'halloween' && mode !== 'hurry' ? 10 : 0) + (theme === 'newyear' ? 12 : 0); }
 
 function sched() {
   if (!ac || ac.state !== 'running') return;
@@ -127,6 +160,7 @@ function sched() {
 
 function playStep(s, t) {
   if (mode === 'off') return;
+  if (style === 'synth' && mode !== 'menu') return playSynth(s, t);
   const sx = 60 / tempo() / 4;
   const hw = theme === 'halloween', ny = theme === 'newyear';
   const bar = (s >> 4) % 8, st = s % 16, ch = (hw ? PROG_HW : ny ? PROG_NY : PROG)[bar % 4];
@@ -200,6 +234,16 @@ export function sfx(name, vol = 1, pan = 0) {
       o.connect(g); g.connect(d); o.start(t); lfo.start(t); o.stop(t + 0.75); lfo.stop(t + 0.75);
       break;
     }
+    case 'pistol': hit(t, 0.12, 0.45 * v, 1200, 'highpass', d); tone(t, 220, 0.08, 'square', 0.18 * v, d, 80); break;
+    case 'uzi': hit(t, 0.06, 0.32 * v, 1600, 'highpass', d); tone(t, 260, 0.04, 'square', 0.1 * v, d, 120); break;
+    case 'rifle': hit(t, 0.1, 0.42 * v, 900, 'highpass', d); tone(t, 180, 0.07, 'sawtooth', 0.15 * v, d, 70); break;
+    case 'shotgun': hit(t, 0.35, 0.65 * v, 700, 'lowpass', d); hit(t, 0.15, 0.3 * v, 2000, 'highpass', d); tone(t, 110, 0.2, 'sine', 0.5 * v, d, 40); break;
+    case 'swing': hit(t, 0.14, 0.18 * v, 1800, 'bandpass', d); break;
+    case 'punch': tone(t, 140, 0.1, 'sine', 0.45 * v, d, 60); hit(t, 0.08, 0.3 * v, 500, 'lowpass', d); break;
+    case 'kill': hit(t, 0.25, 0.4 * v, 600, 'lowpass', d); tone(t, 300, 0.25, 'square', 0.14 * v, d, 60); break;
+    case 'empty': tone(t, 1800, 0.03, 'square', 0.12 * v, d); break;
+    case 'grab': tone(t, 900, 0.04, 'square', 0.14 * v, d); tone(t + 0.06, 1300, 0.05, 'square', 0.14 * v, d); break;
+    case 'throw': hit(t, 0.18, 0.2 * v, 1200, 'bandpass', d); break;
     case 'whistle':
       tone(t, 1250, 0.18, 'sine', 0.3 * v, d, 1900);
       tone(t + 0.2, 1900, 0.25, 'sine', 0.3 * v, d, 1350);

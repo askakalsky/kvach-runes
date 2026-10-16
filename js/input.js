@@ -1,6 +1,8 @@
 // Keyboard + floating touch joystick.
 // useQ: rune key presses (E / Shift / Q); actQ: action key presses (Space / J / Enter)
-export const input = { useQ: 0, actQ: 0, enabled: false };
+export const input = { useQ: 0, actQ: 0, enabled: false, dm: false, mouseDown: false, btnFire: false, mx: 0, my: 0, mouseT: -1e9 };
+// fire trigger is held (automatic weapons in deathmatch)
+export function fireHeld() { return input.enabled && (keys.has('Space') || keys.has('KeyJ') || input.mouseDown || input.btnFire); }
 export const joy = { active: false, id: null, ox: 0, oy: 0, kx: 0, ky: 0 };
 const keys = new Set();
 const JR = 56;
@@ -17,10 +19,16 @@ export function initInput(canvas, onFirst) {
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
   });
   addEventListener('keyup', e => keys.delete(e.code));
-  addEventListener('blur', () => { keys.clear(); joy.active = false; });
+  addEventListener('blur', () => { keys.clear(); joy.active = false; input.mouseDown = false; input.btnFire = false; });
 
   canvas.addEventListener('pointerdown', e => {
     onFirst();
+    if (e.pointerType === 'mouse' && input.dm && input.enabled) {
+      if (e.button === 0) { input.mouseDown = true; input.mx = e.clientX; input.my = e.clientY; input.mouseT = performance.now(); }
+      if (e.button === 2) input.useQ++;
+      e.preventDefault();
+      return;
+    }
     if (!input.enabled || joy.active) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     joy.active = true; joy.id = e.pointerId;
@@ -28,7 +36,10 @@ export function initInput(canvas, onFirst) {
     canvas.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
+  addEventListener('pointerup', e => { if (e.pointerType === 'mouse') input.mouseDown = false; });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
   canvas.addEventListener('pointermove', e => {
+    if (e.pointerType === 'mouse') { input.mx = e.clientX; input.my = e.clientY; input.mouseT = performance.now(); }
     if (!joy.active || e.pointerId !== joy.id) return;
     let dx = e.clientX - joy.ox, dy = e.clientY - joy.oy;
     const l = Math.hypot(dx, dy);

@@ -1,9 +1,9 @@
-import { genMap, MAP_TYPES } from './map.js';
-import { Sim, RUNES, ITEMS, MODES, EVENTS, THEMES, GIFTS, STORYTELLERS, BOT_NAMES, BOT_NAMES_THEME, TEAM_COLS, TEAM_NAMES, KOTH_WIN, CTF_WIN, HEROES, HERO_KEYS, EMOTES, speedMult, slippery, moveBody, pickMapType, SUDDEN } from './sim.js';
+import { genMap, MAP_TYPES, isSolidT, tileIdx } from './map.js';
+import { Sim, RUNES, ITEMS, MODES, EVENTS, THEMES, GIFTS, STORYTELLERS, BOT_NAMES, BOT_NAMES_THEME, TEAM_COLS, TEAM_NAMES, KOTH_WIN, CTF_WIN, HEROES, HERO_KEYS, EMOTES, WEAPONS, DM_WIN, speedMult, slippery, moveBody, pickMapType, SUDDEN } from './sim.js';
 import { Renderer, drawPawn, drawRuneIcon } from './render.js';
 import { HATS, CAPES, TRAILS, ACH, loadStats, unlocked, reqText, recordResult } from './skins.js';
 import * as A from './audio.js';
-import { input, joy, initInput, readMove } from './input.js';
+import { input, joy, initInput, readMove, fireHeld } from './input.js';
 import { hostRoom, joinRoom, netAvailable } from './net.js';
 
 const $ = id => document.getElementById(id);
@@ -161,6 +161,7 @@ $('profBtn').onclick = () => { renderProfile(); show('profile'); };
 $('profBack').onclick = () => show('menu');
 
 function leaveAll() {
+  input.dm = false; A.setStyle('chip');
   stopMic(); voice.peers = [];
   role = null; sim = null; cl = null; results = null;
   for (const { conn } of conns.values()) try { conn.close(); } catch (e) { }
@@ -235,12 +236,12 @@ function renderLobby(data) {
   $('waitMsg').classList.toggle('hidden', isHost);
   $('modeSel').value = settings.mode; $('botsIn').value = settings.bots; $('durSel').value = settings.dur;
   $('mapSel').value = settings.map; $('themeSel').value = settings.theme; $('teamSel').value = settings.teams;
-  const fixedMap = settings.mode === 'bomber' || settings.mode === 'pacman';
+  const fixedMap = settings.mode === 'bomber' || settings.mode === 'pacman' || settings.mode === 'dm';
   $('mapSel').disabled = fixedMap;
   $('teamRow').classList.toggle('hidden', settings.mode !== 'ctf');
   $('botsVal').textContent = settings.bots;
   $('modeDesc').textContent = MODES[s.mode].desc + (s.mode === 'bomber' ? ' Карта — арена с ящиками.' : s.mode === 'pacman' ? ' Карта — неоновый лабиринт.' : '');
-  const mapName = s.mode === 'bomber' ? 'Арена' : s.mode === 'pacman' ? 'Лабиринт пакмена' : MAP_TYPES[s.map] || 'случайная карта';
+  const mapName = s.mode === 'bomber' ? 'Арена' : s.mode === 'pacman' ? 'Лабиринт пакмена' : s.mode === 'dm' ? 'Неоновое здание' : MAP_TYPES[s.map] || 'случайная карта';
   $('clientMode').textContent = `${MODES[s.mode].name} · ${mapName} · ${s.dur / 60} мин · ботов: ${s.bots} · ${THEMES[s.theme] || ''}`;
   $('clientMode').classList.toggle('hidden', isHost);
   $('heroRow').classList.toggle('hidden', s.mode !== 'heroes');
@@ -305,8 +306,10 @@ function onHostMsg(conn, m) {
     if (m.tp === p.tp && (p.alive || p.ghost) && sim.phase === 'play' && Number.isFinite(m.x) && Number.isFinite(m.y)) {
       if (Math.hypot(m.x - p.x, m.y - p.y) < 120) { p.x = m.x; p.y = m.y; p.z = m.z === 1 ? 1 : 0; p.stairs = m.st ? 1 : 0; } else p.tp++;
       if (Number.isFinite(m.dx)) { p.fdx = m.dx; p.fdy = m.dy; }
+      if (Array.isArray(m.aa) && Number.isFinite(m.aa[0]) && Number.isFinite(m.aa[1])) { const l = Math.hypot(m.aa[0], m.aa[1]) || 1; p.aimx = m.aa[0] / l; p.aimy = m.aa[1] / l; }
       p.m = m.m ? 1 : 0;
     }
+    p.fire = !!m.fi;
     if (m.u > p.useSeq) { p.useSeq = m.u; sim.useRune(p); }
     if (m.bs > p.bombSeq) { p.bombSeq = m.bs; sim.action(p); }
   }
@@ -334,12 +337,13 @@ function startMatch() {
 function enterGame(mode, theme) {
   show('game');
   results = null; lastRune = undefined; lastTick = -1;
-  applyTheme(theme); A.setMusic('game');
-  const act = { bomber: ['💣', 'бомба'], koth: ['✊', 'толчок'], heroes: [HEROES[prof.hero].icon, HEROES[prof.hero].ab] }[mode];
+  applyTheme(theme); A.setStyle(mode === 'dm' ? 'synth' : 'chip'); A.setMusic('game');
+  input.dm = mode === 'dm';
+  const act = { bomber: ['💣', 'бомба'], koth: ['✊', 'толчок'], heroes: [HEROES[prof.hero].icon, HEROES[prof.hero].ab], dm: ['👊', 'огонь'] }[mode];
   $('bombBtn').classList.toggle('hidden', !act);
   if (act) { $('bombBtn').querySelector('b').textContent = act[0]; $('bombBtn').querySelector('span').textContent = act[1]; }
   syncMicButtons();
-  $('keysHint').textContent = act ? `WASD — бег · ПРОБЕЛ — ${act[1]} · E — руна` : 'WASD — бег · ПРОБЕЛ / E — руна';
+  $('keysHint').textContent = mode === 'dm' ? 'WASD — бег · мышь — прицел · ЛКМ/ПРОБЕЛ — огонь · E/ПКМ — бросить/подобрать' : act ? `WASD — бег · ПРОБЕЛ — ${act[1]} · E — руна` : 'WASD — бег · ПРОБЕЛ / E — руна';
 }
 
 // ---------- client networking ----------
@@ -382,13 +386,47 @@ function onSnap(m) {
   const o = cl.own;
   if (q.tp !== o.tp) { o.x = q.x; o.y = q.y; o.vx = o.vy = 0; o.tp = q.tp; o.z = q.z || 0; o.stairs = q.st || 0; }
   o.it = !!q.it; o.alive = !!q.a; o.ghost = !!q.g; o.score = q.s; o.sfx = q.f || {};
-  o.hero = q.h || null; o.cd = q.cd || 0; o.lives = q.l; o.boots = q.bo || 0; o.pw = q.pw; o.team = q.tm ?? -1; o.carry = q.c ?? -1;
+  o.wpn = q.w || 'fist'; o.ammo = q.am || 0; o.down = q.dn ? 1 : 0; o.pts = q.pt || 0; o.hero = q.h || null; o.cd = q.cd || 0; o.lives = q.l; o.boots = q.bo || 0; o.pw = q.pw; o.team = q.tm ?? -1; o.carry = q.c ?? -1;
   if (now - cl.useAt > 450) o.rune = q.r;
 }
 
 // ---------- fx ----------
 function meNow() { return view && view.players.find(p => p.id === myId); }
+// ---------- aiming (deathmatch) ----------
+function losMap(x0, y0, x1, y1) {
+  const map = sim ? sim.map : cl && cl.map;
+  if (!map) return false;
+  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 6);
+  for (let i = 1; i < n; i++) { const ti = tileIdx(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n); if (isSolidT(map.g[ti]) || map.dyn.has(ti)) return false; }
+  return true;
+}
+// mouse aim on desktop; otherwise auto-aim at the nearest visible enemy, else where you run
+function aimFor(p, v) {
+  if (!p) return [0, 1];
+  if (performance.now() - input.mouseT < 4000) {
+    const w = (use3d && R3 ? R3 : R).screenToWorld(input.mx, input.my);
+    if (w) { const dx = w[0] - p.x, dy = w[1] - (p.y - 6), l = Math.hypot(dx, dy); if (l > 3) return [dx / l, dy / l]; }
+  }
+  if (v) {
+    let best = null, bd = 230 * 230;
+    for (const q of v.players) {
+      if (q.id === p.id || !q.alive) continue;
+      const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+      if (d < bd && losMap(p.x, p.y - 6, q.x, q.y - 6)) { bd = d; best = q; }
+    }
+    if (best) { const l = Math.sqrt(bd) || 1; return [(best.x - p.x) / l, (best.y - p.y) / l]; }
+  }
+  const mv = readMove(), ml = Math.hypot(mv.x, mv.y);
+  if (ml > 0.2) return [mv.x / ml, mv.y / ml];
+  const l = Math.hypot(p.fdx || 0, p.fdy || 0) || 1;
+  return [(p.fdx || 0) / l, (p.fdy ?? 1) / l];
+}
+// which pawn animates on which event: [field holding the id, animation, seconds]
+const ANIM = { tag: ['a', 'push', 0.3], jail: ['a', 'push', 0.3], shove: ['id', 'push', 0.25], use: ['id', 'cast', 0.35], ability: ['id', 'cast', 0.35], bombset: ['id', 'crouch', 0.3], pick: ['id', 'jump', 0.25], item: ['id', 'jump', 0.25], gift: ['id', 'jump', 0.3], emote: ['id', 'jump', 0.4], capture: ['id', 'jump', 0.45], flagtake: ['id', 'jump', 0.25], eat: ['id', 'jump', 0.25], grab: ['id', 'jump', 0.2] };
+const HURT = { tag: 'b', jail: 'b', hit: 'id', freeze: 'id', boo: 'id', punch: 'id' };
 function handleFx(f) {
+  const an = ANIM[f.k]; if (an && f[an[0]]) FX().anim(f[an[0]], an[1], an[2]);
+  const hu = HURT[f.k]; if (hu && f[hu]) FX().hurt(f[hu]);
   const me = meNow();
   const vol = me && f.x ? Math.max(0, 1 - Math.hypot(me.x - f.x, me.y - f.y) / 260) : 1;
   const mine = f.id === myId;
@@ -454,6 +492,30 @@ function handleFx(f) {
       break;
     case 'impact': FX().burst(f.x, f.y, f.h ? '#d9772e' : '#9a7a5a', 22, 80, 0.6, 2); FX().ring(f.x, f.y, '#ffb03b', 20); A.sfx('impact', vol); if (vol > 0.7) FX().shake = 0.5; break;
     case 'pel': if (mine) A.sfx('chomp'); break;
+    case 'shot': {
+      for (const [ex, ey] of f.e) { FX().tracer(f.x, f.y, ex, ey); FX().burst(ex, ey, '#fff3b0', 3, 30, 0.2); }
+      FX().burst(f.x + (f.e[0][0] - f.x) * 0.06, f.y + (f.e[0][1] - f.y) * 0.06, '#ffd23f', 5, 40, 0.12);
+      FX().shell(f.x, f.y + 6);
+      FX().anim(f.id, 'shoot', 0.12);
+      A.sfx(f.w, Math.max(0.25, vol));
+      if (mine) FX().shake = Math.max(FX().shake, f.w === 'shotgun' ? 0.6 : 0.2);
+      break;
+    }
+    case 'swing': FX().anim(f.id, f.w === 'fist' ? 'punch' : 'swing', f.w === 'fist' ? 0.2 : 0.22, f.ax, f.ay); A.sfx('swing', vol); break;
+    case 'punch': FX().burst(f.x, f.y - 8, '#ffffff', 10, 50, 0.3); FX().text(f.x, f.y - 26, 'БАМ!', '#ffe14a'); A.sfx('punch', Math.max(vol, 0.4)); if (mine) { center('СБИТ С НОГ!', '#ffe14a'); vib(120); } break;
+    case 'kill': {
+      FX().blood(f.x, f.y, f.dx || 0, f.dy || 0); FX().burst(f.x, f.y - 6, '#b0141c', 26, 90, 0.6, 2);
+      A.sfx('kill', Math.max(vol, 0.4));
+      if (vol > 0.5) FX().shake = Math.max(FX().shake, 0.5);
+      if (f.by === myId) { const pts = 100 * (f.c || 1); center(f.c > 1 ? `+${pts} · x${f.c} КОМБО!` : `+${pts}`, f.c > 1 ? '#2ff3ff' : '#ff3fa4'); vib(60); }
+      if (mine) { center('ТЫ УБИТ', '#ff3fa4'); vib(300); FX().shake = 1; }
+      FX().text(f.x, f.y - 24, f.c > 2 ? 'МЯСО!' : 'УБИТ', '#ff3fa4');
+      break;
+    }
+    case 'spawn': FX().ring(f.x, f.y - 4, '#2ff3ff', 30); break;
+    case 'empty': if (mine) { A.sfx('empty'); FX().text(f.x, f.y - 24, 'ПУСТО', '#aaa'); } break;
+    case 'throw': FX().anim(f.id, 'throw', 0.2, f.ax, f.ay); A.sfx('throw', vol); break;
+    case 'grab': if (mine) { A.sfx('grab'); FX().text(f.x, f.y - 18, WEAPONS[f.w].name, '#2ff3ff'); } break;
     case 'whistle': {
       FX().ping(f.x, f.y, mine ? '#7dff8a' : '#ffe14a');
       const dx = me ? f.x - me.x : 0, dist = me ? Math.hypot(dx, f.y - me.y) : 0;
@@ -642,7 +704,8 @@ $('toLobbyBtn').onclick = () => { sim = null; results = null; renderLobby(); sho
 
 // ---------- HUD ----------
 $('runeBtn').addEventListener('pointerdown', e => { e.preventDefault(); A.audioInit(); if (input.enabled) input.useQ++; });
-$('bombBtn').addEventListener('pointerdown', e => { e.preventDefault(); A.audioInit(); if (input.enabled) input.actQ++; });
+$('bombBtn').addEventListener('pointerdown', e => { e.preventDefault(); A.audioInit(); if (input.enabled) { input.actQ++; input.btnFire = true; } });
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('bombBtn').addEventListener(ev, () => { input.btnFire = false; });
 $('muteBtn').onclick = () => { $('muteBtn').classList.toggle('off', A.toggleMute()); };
 $('muteBtn').classList.toggle('off', A.isMuted());
 let exitArm = 0;
@@ -664,6 +727,13 @@ function updateHud(v, dt) {
     if (rune) $('runeBtn').style.setProperty('--rc', RUNES[rune].col);
   }
   if (centerT > 0) { centerT -= dt; if (centerT <= 0) $('center').classList.remove('pop'); }
+  if (v.mode === 'dm' && me) {
+    const w = WEAPONS[me.wpn || 'fist'];
+    $('bombBtn').querySelector('b').textContent = w.melee ? (me.wpn === 'fist' ? '👊' : '🗡') : '🔫';
+    $('bombBtn').querySelector('span').textContent = w.melee ? w.name : `${me.ammo}`;
+    $('bombBtn').classList.toggle('cool', !w.melee && me.ammo <= 0);
+    $('runeName').textContent = me.wpn && me.wpn !== 'fist' ? 'бросить' : 'подобрать';
+  }
   if (v.mode === 'heroes' && me && me.hero) {
     const h = HEROES[me.hero], cd = me.abilCd ?? me.cd ?? 0;
     $('bombBtn').querySelector('b').textContent = h.icon;
@@ -692,21 +762,24 @@ function updateHud(v, dt) {
   else if (bomber) { const pw = me && (me.pw || [me.maxB, me.range]); sub = me && me.alive && pw ? `💣${pw[0]} 🔥${pw[1]} 👟${me.boots || 0}` : ''; }
   else if (v.mode === 'ctf') sub = v.teamScore ? `<b style="color:${TEAM_COLS[0]}">${v.teamScore[0]}</b> : <b style="color:${TEAM_COLS[1]}">${v.teamScore[1]}</b> из ${CTF_WIN}${me && me.team >= 0 ? `<br>ты: ${TEAM_NAMES[me.team]}` : ''}` : '';
   else if (v.mode === 'koth') sub = `до ${KOTH_WIN} с · трон переедет через ${Math.ceil(v.zone ? v.zone.t : 0)}`;
+  else if (v.mode === 'dm') sub = me ? `${WEAPONS[me.wpn || 'fist'].name}${!WEAPONS[me.wpn || 'fist'].melee ? ' · ' + me.ammo : ''}<br>убийств: <b>${me.score}</b> / ${DM_WIN}${me.alive ? '' : '<br><b style="color:#ff3fa4">ты убит…</b>'}` : '';
   else if (v.mode === 'pacman') sub = `точек: ${R.map.pellets.size}${v.fright > 0 ? ` · <b style="color:#6a8aff">СИЛА ${Math.ceil(v.fright)}</b>` : ''}`;
   else if (v.mode === 'hide') sub = hiding ? (me && me.it ? 'Водишь. Не подглядывай!' : 'Прячься!') : `Спрятались: <b>${v.players.filter(p => p.alive && !p.it).length}</b>${me && me.it ? '<br>ты ищешь 🔦' : ''}<br>🎵 свист через ${Math.ceil(v.whistleT || 0)}`;
   else sub = `Живых: <b>${v.players.filter(p => p.alive && !p.it).length}</b>/${v.players.length}`;
   if (me && !me.alive) sub += '<br>👻 ты призрак';
   $('sub').innerHTML = sub;
   const rows = v.players.slice();
-  const scored = ['koth', 'pacman', 'ctf'].includes(v.mode);
+  const scored = ['koth', 'pacman', 'ctf', 'dm'].includes(v.mode);
   if ((v.mode === 'classic' || v.mode === 'heroes')) rows.sort((a, b) => a.score - b.score);
   else if (bomber) rows.sort((a, b) => (b.alive - a.alive) || ((b.lives || 0) - (a.lives || 0)) || (b.score - a.score));
   else if (scored) rows.sort((a, b) => b.score - a.score);
   else rows.sort((a, b) => (b.alive - a.alive) || (a.it - b.it) || (b.score - a.score));
   $('board').innerHTML = rows.map(p => {
     const val = (v.mode === 'classic' || v.mode === 'heroes') ? p.score.toFixed(0) + 'с'
+      : v.mode === 'dm' ? `${p.score}${p.alive ? '' : '💀'}`
       : !p.alive ? '👻'
       : bomber ? '♥'.repeat(Math.max(0, p.lives || 0))
+      : v.mode === 'dm' ? `${p.score}${p.alive ? '' : '💀'}`
       : v.mode === 'pacman' ? `${p.score.toFixed(0)}`
       : v.mode === 'koth' ? p.score.toFixed(0) + 'с'
       : v.mode === 'ctf' ? (p.carry >= 0 ? '🚩' : '')
@@ -731,6 +804,7 @@ function hostView() {
     puddles: sim.puddles, meteors: sim.meteors, spirits: sim.spirits, sd: sim.sdN || 0,
     mobs: sim.mobs.map(m => ({ x: m.x, y: m.y, kind: m.kind, s: m.state === 'fright' ? 1 : m.state === 'dead' ? 2 : 0 })), fright: sim.fright,
     flags: sim.mode === 'ctf' ? sim.flags : null, teamScore: sim.teamScore, zone: sim.zone || null, hideT: sim.hideT, whistleT: sim.whistleT, emotes,
+    pickups: sim.pickups ? sim.pickups.filter(k => !k.wait) : null, thrown: sim.thrown || null,
     walls: [...sim.map.dyn.keys()], event: sim.event && sim.event.k,
     time: sim.time, phase: sim.phase, fuse: sim.fuse, mode: sim.mode, me: myId,
   };
@@ -752,11 +826,11 @@ function clientView(now) {
     const info = cl.roster.get(q.i) || { name: '?', color: '#888888' };
     if (q.i === myId && cl.own) {
       const o = cl.own;
-      return { ...info, id: q.i, x: o.x, y: o.y, fdx: o.fdx, fdy: o.fdy, m: o.m, it: o.it, alive: o.alive, ghost: o.ghost, score: o.score, rune: o.rune, fx: o.fx, lives: o.lives, boots: o.boots, pw: o.pw, z: o.z, stairs: o.stairs, team: o.team, carry: o.carry, hero: o.hero, cd: o.cd };
+      return { ...info, id: q.i, x: o.x, y: o.y, fdx: o.fdx, fdy: o.fdy, m: o.m, it: o.it, alive: o.alive, ghost: o.ghost, score: o.score, rune: o.rune, fx: o.fx, lives: o.lives, boots: o.boots, pw: o.pw, z: o.z, stairs: o.stairs, team: o.team, carry: o.carry, hero: o.hero, cd: o.cd, wpn: o.wpn, ammo: o.ammo, down: o.down, pts: o.pts };
     }
     const lp = lerpPos(q.i, 'p', 0);
     const src = lp ? lp[2] : q;
-    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, ghost: !!q.g, score: q.s, rune: q.r, fx: q.f || {}, lives: q.l, z: q.z || 0, stairs: q.st || 0, team: q.tm ?? -1, carry: q.c ?? -1, hero: q.h || null, cd: q.cd || 0, seed: q.i.length };
+    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, ghost: !!q.g, score: q.s, rune: q.r, fx: q.f || {}, lives: q.l, z: q.z || 0, stairs: q.st || 0, team: q.tm ?? -1, carry: q.c ?? -1, wpn: q.w || 'fist', ammo: q.am || 0, down: q.dn || 0, pts: q.pt || 0, hero: q.h || null, cd: q.cd || 0, seed: q.i.length };
   });
   const decoys = L.de.map(d => {
     const lp = lerpPos(d[0], 'de', 1);
@@ -781,6 +855,8 @@ function clientView(now) {
     bombs: (L.bm || []).map(b2 => ({ id: b2[0], x: b2[1], y: b2[2], t: b2[3] })),
     items: (L.im || []).map(it => ({ id: it[0], x: it[1], y: it[2], k: it[3] })),
     sd: L.sd || 0,
+    pickups: L.pk ? L.pk.map(k => ({ id: k[0], x: k[1], y: k[2], k: k[3] })) : null,
+    thrown: L.tw ? L.tw.map(k => ({ id: k[0], x: k[1], y: k[2], k: k[3] })) : null,
     walls: L.w, event: L.ev && L.ev.k, time: L.tm, phase: L.ph, fuse: L.fu, mode: cl.mode, me: myId,
   };
 }
@@ -801,6 +877,7 @@ function tick(now) {
     const mp = sim.byId(myId), mv = localMove(sim.event && sim.event.k);
     if (mp) {
       mp.ax = mv.x; mp.ay = mv.y;
+      if (sim.mode === 'dm') { const a = aimFor(mp, view); mp.aimx = a[0]; mp.aimy = a[1]; mp.fire = fireHeld(); }
       while (input.useQ > 0) { input.useQ--; sim.useRune(mp); }
       while (input.actQ > 0) { input.actQ--; sim.action(mp); }
     }
@@ -830,11 +907,13 @@ function tick(now) {
       if (L.ph === 'play' && o.alive) {
         const mv = localMove(ev);
         moveBody(cl.map, o, mv.x, mv.y, dt, speedMult(o, cl.mode, ev, false), slippery(cl.map, o, ev));
+        if (cl.mode === 'dm') { const a = aimFor(o, view); o.aim = a; o.fdx = a[0]; o.fdy = a[1]; }
       } else if (L.ph === 'play' && o.ghost) {
         const mv = localMove(ev);
         moveBody(cl.map, o, mv.x, mv.y, dt, 0.9, false, true);
       } else { o.m = 0; o.vx = o.vy = 0; }
       const tryRune = () => {
+        if (cl.mode === 'dm') { if (o.alive && L.ph === 'play') cl.useSeq++; return; }
         if (o.rune && L.ph === 'play' && o.alive) {
           cl.useSeq++; cl.useAt = now;
           if (o.rune === 'dash') cl.localFx.dash = 0.3;
@@ -847,7 +926,7 @@ function tick(now) {
       while (input.actQ > 0) { input.actQ--; if (cl.mode === 'bomber' || cl.mode === 'koth' || cl.mode === 'heroes') { if (o.alive) cl.bombSeq++; } else tryRune(); }
       if (now - cl.lastSend >= 33) {
         cl.lastSend = now;
-        send({ t: 'in', x: r1(o.x), y: r1(o.y), dx: r2(o.fdx), dy: r2(o.fdy), m: o.m, u: cl.useSeq, bs: cl.bombSeq, tp: o.tp, z: o.z || 0, st: o.stairs || 0 });
+        send({ t: 'in', x: r1(o.x), y: r1(o.y), dx: r2(o.fdx), dy: r2(o.fdy), m: o.m, u: cl.useSeq, bs: cl.bombSeq, tp: o.tp, z: o.z || 0, st: o.stairs || 0, fi: cl.mode === 'dm' && fireHeld() && o.alive ? 1 : 0, aa: o.aim ? [r2(o.aim[0]), r2(o.aim[1])] : undefined });
       }
     }
     view = clientView(now);

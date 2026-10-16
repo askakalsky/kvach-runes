@@ -4,7 +4,33 @@ import { RUNES, GLYPHS, ITEMS, TEAM_COLS, MOB_COLS, HEROES, EMOTES } from './sim
 import { CAPES } from './skins.js';
 
 const OL = '#1d1712';
-function P(g, c, x, y, w = 1, h = 1) { g.fillStyle = c; g.fillRect(x, y, w, h); }
+// FLASH: when set, every opaque pixel of a sprite is drawn in this colour (hit flash)
+let FLASH = null;
+function P(g, c, x, y, w = 1, h = 1) { g.fillStyle = FLASH && !c.startsWith('rgba') ? FLASH : c; g.fillRect(x, y, w, h); }
+const NEON_DECOR = ['couch', 'table', 'plant', 'arcade'];
+function neonDecor(g, kind, cx, cy) {
+  P(g, 'rgba(0,0,0,.35)', cx - 6, cy + 4, 13, 2);
+  if (kind === 'couch') { P(g, OL, cx - 7, cy - 5, 15, 10); P(g, '#ff3fa4', cx - 6, cy - 4, 13, 8); P(g, '#c02a7a', cx - 6, cy - 4, 13, 3); P(g, '#ff7ac4', cx - 6, cy + 1, 13, 1); }
+  else if (kind === 'table') { P(g, OL, cx - 6, cy - 5, 13, 9); P(g, '#6a3a1a', cx - 5, cy - 4, 11, 7); P(g, '#8a5a2a', cx - 5, cy - 4, 11, 1); P(g, '#e8e8e8', cx - 2, cy - 2, 3, 2); P(g, '#ff3fa4', cx + 2, cy - 3, 1, 2); }
+  else if (kind === 'plant') { P(g, OL, cx - 3, cy, 7, 5); P(g, '#c85a2a', cx - 2, cy + 1, 5, 3); for (const [dx, dy] of [[-3, -4], [0, -6], [3, -4], [-2, -2], [2, -2]]) P(g, '#3fc05a', cx + dx, cy + dy, 2, 3); }
+  else { P(g, OL, cx - 5, cy - 8, 11, 13); P(g, '#2a1a4a', cx - 4, cy - 7, 9, 11); P(g, '#2ff3ff', cx - 3, cy - 6, 7, 4); P(g, '#ff3fa4', cx - 2, cy, 2, 2); P(g, '#ffe14a', cx + 1, cy, 2, 2); }
+}
+// held / dropped weapon sprite, drawn along +x and rotated by ang
+export function drawWeapon(g, k, x, y, ang) {
+  if (!k || k === 'fist') return;
+  g.save(); g.translate(x, y); g.rotate(ang); if (Math.cos(ang) < 0) g.scale(1, -1);
+  const R2 = (c, x0, y0, w, h) => { g.fillStyle = FLASH || c; g.fillRect(x0, y0, w, h); };
+  switch (k) {
+    case 'pistol': R2(OL, -1, -1.5, 7, 3.5); R2('#9a9aa8', 0, -1, 6, 1.5); R2('#5a5a68', 0, 0, 2, 2.5); break;
+    case 'uzi': R2(OL, -1, -1.5, 9, 3.5); R2('#3a3a44', 0, -1, 8, 2); R2('#22222a', 3, 0.5, 2, 3); break;
+    case 'rifle': R2(OL, -3, -1.5, 14, 3.5); R2('#4a4a3a', -2, -1, 13, 2); R2('#22222a', 4, 0.5, 2, 3); R2('#6a4a2a', -2, -1, 3, 2.5); break;
+    case 'shotgun': R2(OL, -3, -1.5, 14, 3.5); R2('#5a5a68', 2, -1, 9, 1.2); R2('#8a5a2a', -2, -1, 5, 2.5); R2('#8a5a2a', 4, 0, 3, 1.2); break;
+    case 'bat': R2(OL, -1, -1.5, 14, 3.5); R2('#7a4a24', 0, -0.7, 4, 1.4); R2('#c89a5a', 4, -1, 9, 2.2); break;
+    case 'knife': R2(OL, -1, -1, 9, 2.6); R2('#3a2a1a', 0, -0.5, 3, 1.6); R2('#e8e8f0', 3, -0.5, 5, 1.4); break;
+    case 'katana': R2(OL, -1, -1.2, 17, 2.6); R2('#8a1a1a', 0, -0.6, 4, 1.4); R2('#ffcc33', 4, -1, 1, 2); R2('#f0f0ff', 5, -0.5, 10, 1.2); break;
+  }
+  g.restore();
+}
 function disc(g, c, cx, cy, r) {
   g.fillStyle = c;
   for (let y = -r; y <= r; y++) { const w = Math.floor(Math.sqrt(r * r - y * y + r * 0.6)); g.fillRect(cx - w, cy + y, w * 2 + 1, 1); }
@@ -87,7 +113,7 @@ export function buildLayers(map, seed) {
   };
   for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
     const t = at(x, y), px = x * TS, py = y * TS;
-    switch (t) {
+    switch (ty === 'neon' && t === T.DECOR ? T.FLOOR : t) {
       case T.GRASS: case T.BUSH: case T.TREE: case T.PORTAL: case T.TOMB: case T.DECOR: case T.MUSH:
         if (t === T.TREE && ty === 'beach' && (at(x - 1, y) === T.SAND || at(x + 1, y) === T.SAND || at(x, y + 1) === T.SAND)) { P(g, '#d9c48a', px, py, TS, TS); break; }
         grass(px, py, x, y); break;
@@ -115,6 +141,15 @@ export function buildLayers(map, seed) {
         break;
       case T.FLOOR:
         if (pac) { P(g, '#1a0f2a', px, py, TS, TS); break; }
+        if (ty === 'neon') {
+          const st = map.room ? map.room[y * MW + x] : 0;
+          if (st === 0) { for (let k = 0; k < 4; k++) for (let j = 0; j < 4; j++) P(g, (k + j + x + y) % 2 ? '#bdb4cc' : '#221830', px + j * 4, py + k * 4, 4, 4); }
+          else if (st === 1) { P(g, '#6a1450', px, py, TS, TS); for (let i = 0; i < 18; i++) P(g, r() < 0.5 ? '#7a1a5e' : '#5a1044', px + ri(0, 15), py + ri(0, 15)); }
+          else if (st === 2) { P(g, '#0f4048', px, py, TS, TS); P(g, '#0a2a30', px, py, TS, 1); P(g, '#0a2a30', px, py, 1, TS); P(g, '#167080', px + 8, py + 8, 1, 1); }
+          else if (st === 3) { P(g, '#4a2860', px, py, TS, TS); for (let k = 0; k < 4; k++) { P(g, '#3a1e4c', px, py + k * 4 + 3, TS, 1); P(g, '#5a3474', px + ((k * 5 + x * 7) % 14), py + k * 4, 2, 1); } }
+          else { P(g, '#5a2420', px, py, TS, TS); for (let k = 0; k < 4; k++) { P(g, '#40180f', px, py + k * 4 + 3, TS, 1); P(g, '#40180f', px + ((k % 2) * 4 + 2), py + k * 4, 1, 3); P(g, '#40180f', px + ((k % 2) * 4 + 10), py + k * 4, 1, 3); } }
+          break;
+        }
         P(g, '#7d5f3c', px, py, TS, TS);
         for (let k = 0; k < 4; k++) {
           P(g, '#634a2d', px, py + k * 4 + 3, TS, 1);
@@ -123,6 +158,15 @@ export function buildLayers(map, seed) {
         }
         break;
       case T.WALL: {
+        if (ty === 'neon') {
+          P(g, '#140c1e', px, py, TS, TS);
+          for (let i = 0; i < 5; i++) P(g, '#1e1430', px + ri(0, 15), py + ri(0, 15));
+          if (at(x, y - 1) !== T.WALL) { P(g, '#ff3fa4', px, py, TS, 2); P(g, '#ff9ad5', px, py, TS, 1); }
+          if (at(x, y + 1) !== T.WALL) P(g, '#2a1838', px, py + 11, TS, 5);
+          if (at(x - 1, y) !== T.WALL) P(g, '#2ff3ff', px, py, 1, TS);
+          if (at(x + 1, y) !== T.WALL) P(g, '#2ff3ff', px + 15, py, 1, TS);
+          break;
+        }
         if (pac) {
           P(g, '#0b1030', px, py, TS, TS);
           const n = at(x, y - 1) !== T.WALL, s = at(x, y + 1) !== T.WALL, w = at(x - 1, y) !== T.WALL, e = at(x + 1, y) !== T.WALL;
@@ -182,7 +226,7 @@ export function buildLayers(map, seed) {
       P(g, '#8a8a92', px + 5, py + 2, 6, 10); P(g, win ? '#f4f8fb' : '#a4a4ac', px + 5, py + 2, 6, win ? 2 : 1); P(g, '#6e6e76', px + 10, py + 3, 1, 9);
       P(g, '#5f5f68', px + 7, py + 4, 2, 6); P(g, '#5f5f68', px + 6, py + 5, 4, 1);
     }
-    if (t === T.DECOR) decor(g, decoKind, px + 8, py + 9, r);
+    if (t === T.DECOR) { if (ty === 'neon') neonDecor(g, NEON_DECOR[(x * 7 + y * 13) % 4], px + 8, py + 9); else decor(g, decoKind, px + 8, py + 9, r); }
     if (t === T.MUSH) {
       for (let k = 0; k < 2 + ri(0, 1); k++) {
         const mx = px + ri(3, 12), my = py + ri(6, 13), magic = ty === 'magic';
@@ -320,11 +364,18 @@ function drawHat(g, key, x, hy, dir) {
 
 export function drawPawn(g, x, y, o, t) {
   x = Math.round(x); y = Math.round(y);
+  const act = o.act, af = act ? act.f : 0, ext = act ? Math.sin(af * Math.PI) : 0;
+  if (act && act.k === 'hurt') x += Math.floor(t * 40) % 2 ? 1 : -1;
+  const jy = act && act.k === 'jump' ? Math.round(ext * 4) : 0;
+  if (jy) { P(g, 'rgba(0,0,0,.28)', x - 4, y - 1, 9, 2); y -= jy; }
+  FLASH = o.flash ? '#ffffff' : null;
   const dir = Math.abs(o.fdx) > Math.abs(o.fdy) ? (o.fdx > 0 ? 3 : 2) : (o.fdy < 0 ? 1 : 0);
   const step = o.m ? Math.floor(t * 10 + (o.seed || 0)) % 2 : 0, bob = o.m && step ? 1 : 0;
   const skin = o.zombie ? '#8fb36a' : '#e8c39e', shirt = o.zombie ? '#5e7a3a' : o.color;
-  const by = y - 10 - bob, cape = o.cape && CAPES[o.cape] && CAPES[o.cape].col;
-  P(g, 'rgba(0,0,0,.28)', x - 4, y - 1, 9, 2); P(g, 'rgba(0,0,0,.28)', x - 3, y - 2, 7, 1); P(g, 'rgba(0,0,0,.28)', x - 3, y + 1, 7, 1);
+  const crouch = act && act.k === 'crouch' ? Math.round(ext * 2) : 0;
+  const breath = !o.m && !act ? Math.floor(t * 1.6 + (o.seed || 0) * 0.7) % 2 : 0;
+  const by = y - 10 - bob + crouch, cape = o.cape && CAPES[o.cape] && CAPES[o.cape].col;
+  if (!jy) P(g, 'rgba(0,0,0,.28)', x - 4, y - 1, 9, 2); P(g, 'rgba(0,0,0,.28)', x - 3, y - 2, 7, 1); P(g, 'rgba(0,0,0,.28)', x - 3, y + 1, 7, 1);
   if (cape && dir !== 1) {
     const sway = step ? 1 : 0;
     if (dir === 0) { P(g, OL, x - 6, by + 1, 13, 8 + sway); P(g, cape, x - 5, by + 2, 11, 6 + sway); }
@@ -336,17 +387,26 @@ export function drawPawn(g, x, y, o, t) {
   P(g, shirt, x - 3, by + 1, 7, 5);
   P(g, shade(shirt, -0.25), x + 2, by + 1, 1, 5);
   P(g, shade(shirt, 0.25), x - 3, by + 1, 1, 3);
-  P(g, OL, x - 5, by + 1 + step, 1, 3); P(g, OL, x + 5, by + 2 - step, 1, 3);
-  P(g, skin, x - 5, by + 3 + step, 1, 1); P(g, skin, x + 5, by + 4 - step, 1, 1);
+  const reach = act && ['punch', 'push', 'throw'].includes(act.k);
+  const ax = act ? act.ax ?? o.fdx : 0, ay = act ? act.ay ?? o.fdy : 0;
+  const side = ax >= 0 ? 1 : -1;
+  if (act && act.k === 'cast') {
+    P(g, OL, x - 6, by - 3, 3, 5); P(g, OL, x + 4, by - 3, 3, 5); P(g, skin, x - 5, by - 2, 1, 3); P(g, skin, x + 5, by - 2, 1, 3);
+    if (Math.floor(t * 12) % 2) { P(g, '#ffe14a', x - 6, by - 5); P(g, '#ffe14a', x + 6, by - 5); }
+  } else {
+    if (!(reach && (act.k === 'push' || side < 0))) { P(g, OL, x - 5, by + 1 + step, 1, 3); P(g, skin, x - 5, by + 3 + step, 1, 1); }
+    if (!(reach && (act.k === 'push' || side > 0))) { P(g, OL, x + 5, by + 2 - step, 1, 3); P(g, skin, x + 5, by + 4 - step, 1, 1); }
+  }
   if (cape && dir === 1) {
     P(g, OL, x - 5, by, 11, 10); P(g, cape, x - 4, by + 1, 9, 8); P(g, shade(cape, -0.2), x + 2, by + 1, 2, 8);
     if (o.cape === 'star') { P(g, '#ffe14a', x - 2, by + 3); P(g, '#ffe14a', x + 1, by + 6); P(g, '#ffffff', x + 2, by + 2); }
   }
-  const hy = by - 7, hc = o.hairCol || '#3b2a1a', hat = o.hat || 'none';
+  const hy = by - 7 + breath, hc = o.hairCol || '#3b2a1a', hat = o.hat || 'none';
   if (hat === 'pumpkin') {
     P(g, OL, x - 3, hy, 7, 7); P(g, OL, x - 4, hy + 1, 9, 5);
     P(g, '#d9772e', x - 3, hy + 1, 7, 5); P(g, '#b85e1f', x, hy + 1, 1, 5); P(g, '#4a6b2a', x, hy - 1, 1, 2);
     if (dir !== 1) { P(g, '#ffd23f', dir === 3 ? x : x - 2, hy + 2); P(g, '#ffd23f', dir === 2 ? x : x + 2, hy + 2); P(g, '#ffd23f', x - 1, hy + 4, 3, 1); }
+    FLASH = null;
     return;
   }
   P(g, OL, x - 2, hy, 5, 1); P(g, OL, x - 3, hy + 1, 7, 5); P(g, OL, x - 2, hy + 6, 5, 1);
@@ -366,6 +426,19 @@ export function drawPawn(g, x, y, o, t) {
   if (hair === 2 && hat === 'none') { P(g, OL, x - 1, hy - 3, 3, 4); P(g, hc, x, hy - 2, 1, 4); }
   if (hair === 1 && dir === 1) P(g, hc, x - 3, hy + 2, 7, 4);
   drawHat(g, hat, x, hy, dir);
+  // extended fists for punches, shoves and throws (drawn on top so they read clearly)
+  if (reach) {
+    const fist = (sx, sy, len) => {
+      for (let k = 1; k <= len; k++) { const px = Math.round(sx + ax * k), py = Math.round(sy + ay * k); P(g, OL, px, py + 1); P(g, OL, px + (ay ? 1 : 0), py); P(g, skin, px, py); }
+      const fx = Math.round(sx + ax * (len + 2)), fy = Math.round(sy + ay * (len + 2));
+      P(g, OL, fx - 2, fy - 2, 5, 5); P(g, skin, fx - 1, fy - 1, 3, 3); P(g, shade(skin, -0.2), fx + 1, fy - 1, 1, 3);
+      if (act.k === 'punch' && ext > 0.6) { P(g, '#ffffff', fx + Math.round(ax * 4), fy + Math.round(ay * 4)); P(g, '#ffffff', fx + Math.round(ax * 3 - ay * 2), fy + Math.round(ay * 3 + ax * 2)); P(g, '#ffffff', fx + Math.round(ax * 3 + ay * 2), fy + Math.round(ay * 3 - ax * 2)); }
+    };
+    const len = 2 + Math.round(ext * (act.k === 'punch' ? 7 : 5));
+    if (act.k === 'push') { fist(x - 3, by + 3, len); fist(x + 3, by + 3, len); }
+    else fist(x + side * 4, by + 3, len);
+  }
+  FLASH = null;
 }
 
 function drawGhostSprite(g, x, y, t, col, alpha, eyesOnly, look) {
@@ -437,9 +510,11 @@ export class Renderer {
     this.pings = []; this.parts = []; this.texts = []; this.flames = []; this.bats = []; this.prints = []; this.flakes = []; this.lastPrint = new Map();
     this.cam = { x: 0, y: 0 }; this.shake = 0; this.zoom = 3;
     this.layers = null;
+    this.anims = new Map(); this.flashes = new Map(); this.tracers = [];
   }
   setMap(map, seed) {
     this.map = map; this.layers = buildLayers(map, seed);
+    this.decal = mk(MW * TS, MH * TS); this.anims = new Map(); this.flashes = new Map(); this.tracers = [];
     this.pings = []; this.parts = []; this.texts = []; this.flames = []; this.bats = []; this.prints = []; this.flakes = []; this.lastPrint.clear(); this.camInit = false;
     this.spiral = map.type === 'arena' ? arenaSpiral() : [];
   }
@@ -461,6 +536,23 @@ export class Renderer {
   text(x, y, txt, col = '#fff') { this.texts.push({ x, y, txt, col, life: 1.2 }); }
   ping(x, y, col = '#ffe14a') { this.pings.push({ x, y, col, life: 1.6 }); }
   blast(tiles) { this.flames.push({ tiles, t: 0.5 }); }
+  anim(id, k, dur, ax, ay) { this.anims.set(id, { k, t: dur, dur, ax, ay }); }
+  hurt(id) { this.flashes.set(id, 0.14); this.anim(id, 'hurt', 0.25); }
+  tracer(x0, y0, x1, y1) { this.tracers.push({ x0, y0, x1, y1, t: 0.09 }); }
+  screenToWorld(sx, sy) { return [sx * this.dpr / this.zoom + (this.lastCx || 0), sy * this.dpr / this.zoom + (this.lastCy || 0)]; }
+  // blood splatter stays on the floor for the whole round
+  blood(x, y, dx = 0, dy = 0) {
+    if (!this.decal) return;
+    const d = this.decal.getContext('2d'), cols = ['#8a0f14', '#b0141c', '#5a0a0e', '#a01018'];
+    d.fillStyle = '#6a0c10';
+    for (let yy = -4; yy <= 4; yy++) { const w = Math.floor(Math.sqrt(20 - yy * yy) * 1.3); d.fillRect(Math.round(x) - w, Math.round(y) + yy, w * 2, 1); }
+    for (let i = 0; i < 34; i++) {
+      const s = Math.random() * 26, sp = (Math.random() - 0.5) * 12;
+      d.fillStyle = cols[i % 4];
+      d.fillRect(Math.round(x + dx * s - dy * sp), Math.round(y + dy * s + dx * sp), Math.random() < 0.3 ? 2 : 1, Math.random() < 0.3 ? 2 : 1);
+    }
+  }
+  shell(x, y) { if (!this.decal) return; const d = this.decal.getContext('2d'); d.fillStyle = '#c9a23a'; d.fillRect(Math.round(x + (Math.random() - 0.5) * 14), Math.round(y + (Math.random() - 0.5) * 10), 2, 1); }
 
   hatFor(p) {
     const h = p.skin && p.skin.hat;
@@ -494,6 +586,23 @@ export class Renderer {
     const world = () => g.setTransform(z, 0, 0, z, -cx * z, -cy * z);
     world();
     g.drawImage(this.layers.ground, 0, 0);
+    if (this.decal) g.drawImage(this.decal, 0, 0);
+    this.lastCx = cx; this.lastCy = cy;
+    for (const [id, a] of this.anims) { a.t -= dt; if (a.t <= 0) this.anims.delete(id); }
+    for (const [id, f] of this.flashes) { if (f - dt <= 0) this.flashes.delete(id); else this.flashes.set(id, f - dt); }
+    const dm = v.mode === 'dm';
+    // weapons lying around (deathmatch)
+    if (v.pickups) for (const k of v.pickups) {
+      g.globalAlpha = 0.25 + 0.15 * Math.sin(t * 5 + k.id); disc(g, '#ff3fa4', Math.round(k.x), Math.round(k.y) - 1, 7); g.globalAlpha = 1;
+      drawWeapon(g, k.k, k.x - 5, k.y - 1, 0);
+    }
+    if (v.thrown) for (const k of v.thrown) drawWeapon(g, k.k, k.x, k.y, t * 22 + k.id);
+    // corpses (deathmatch)
+    if (dm) for (const p of v.players) if (!p.alive && !p.ghost) {
+      g.save(); g.translate(Math.round(p.x), Math.round(p.y)); g.rotate((p.id.length % 2 ? 1 : -1) * Math.PI / 2); g.translate(-Math.round(p.x), -Math.round(p.y));
+      drawPawn(g, p.x, p.y + 4, { ...p, color: p.color, m: 0, fdx: 0, fdy: 1, hat: this.hatFor(p), cape: p.skin && p.skin.cape }, 0);
+      g.restore();
+    }
     // conveyor belts: dark rubber with moving chevrons
     if (map.belt) {
       const tx0 = Math.max(0, Math.floor(cx / TS) - 1), ty0 = Math.max(0, Math.floor(cy / TS) - 1);
@@ -662,7 +771,23 @@ export class Renderer {
       g.globalAlpha = alpha;
       const tiny = f.tiny > 0;
       if (tiny) { g.save(); g.translate(p.x, p.y); g.scale(0.6, 0.6); g.translate(-p.x, -p.y); }
-      drawPawn(g, p.x, p.y, { ...p, color: colorOf(p), zombie: v.mode === 'infect' && it, hat: this.hatFor(p), cape: p.skin && p.skin.cape }, t);
+      const an = this.anims.get(p.id);
+      const act = an ? { k: an.k, f: 1 - an.t / an.dur, ax: an.ax, ay: an.ay } : (p.fx && p.fx.dash > 0 ? null : null);
+      const wpn = dm && p.wpn && p.wpn !== 'fist' ? p.wpn : null;
+      const drawW = () => {
+        if (!wpn) return;
+        const ax = p.fdx || 0, ay = p.fdy || 1, base = Math.atan2(ay, ax);
+        let ang = base, back = 0;
+        const melee = ['bat', 'knife', 'katana'].includes(wpn);
+        if (melee) ang = an && an.k === 'swing' ? base - 1.4 + 2.8 * (1 - an.t / an.dur) : base + 1.1;
+        if (an && an.k === 'shoot') back = Math.sin((1 - an.t / an.dur) * Math.PI) * 2;
+        drawWeapon(g, wpn, Math.round(p.x + ax * (4 - back)), Math.round(p.y - 7 + ay * 2), ang);
+      };
+      if (wpn && (p.fdy || 0) < -0.3) drawW();
+      if (p.fx && p.fx.dash > 0) { g.globalAlpha = 0.25 * alpha; drawPawn(g, p.x - p.fdx * 6, p.y - p.fdy * 6, { ...p, color: colorOf(p), hat: this.hatFor(p) }, t); g.globalAlpha = alpha; }
+      drawPawn(g, p.x, p.y, { ...p, color: colorOf(p), zombie: v.mode === 'infect' && it, hat: this.hatFor(p), cape: p.skin && p.skin.cape, act, flash: this.flashes.has(p.id) || (p.down > 0 && Math.floor(t * 6) % 2) }, t);
+      if (wpn && (p.fdy || 0) >= -0.3) drawW();
+      if (dm && p.down > 0) for (let i = 0; i < 3; i++) { const a = t * 6 + i * 2.1; P(g, '#ffe14a', Math.round(p.x + Math.cos(a) * 5), Math.round(p.y - 21 + Math.sin(a) * 2)); }
       if (tiny) g.restore();
       g.globalAlpha = 1;
       const hx = Math.round(p.x), hy = Math.round(p.y) - (tiny ? 13 : 20);
@@ -723,6 +848,14 @@ export class Renderer {
     }
     this.flames = this.flames.filter(f => f.t > 0);
 
+    for (const tr of this.tracers) {
+      tr.t -= dt;
+      g.globalAlpha = Math.max(0, tr.t / 0.09);
+      g.strokeStyle = '#fff6a0'; g.lineWidth = 1; g.beginPath(); g.moveTo(tr.x0, tr.y0); g.lineTo(tr.x1, tr.y1); g.stroke();
+      P(g, '#ffffff', Math.round(tr.x1), Math.round(tr.y1), 1, 1);
+    }
+    g.globalAlpha = 1;
+    this.tracers = this.tracers.filter(tr => tr.t > 0);
     for (const p of v.players) if (!p.alive && p.ghost) drawGhostSprite(g, p.x, p.y, t, p.id === v.me ? '#fff7d8' : '#e8eef8', p.id === v.me ? 0.7 : 0.5);
     for (const s of v.spirits) drawGhostSprite(g, s.x, s.y + 8, t, '#c9a8ff', 0.75);
     for (const m of v.mobs) {
@@ -821,6 +954,13 @@ export class Renderer {
     g.setTransform(1, 0, 0, 1, 0, 0);
     if (ev === 'frost') { g.fillStyle = 'rgba(170,220,255,0.12)'; g.fillRect(0, 0, W, H); }
     if (ev === 'mirror') { g.fillStyle = 'rgba(200,120,255,0.08)'; g.fillRect(0, 0, W, H); }
+    if (dm) {
+      if (!this.scan) { const c2 = mk(1, 3); const s2 = c2.getContext('2d'); s2.fillStyle = 'rgba(0,0,0,0.16)'; s2.fillRect(0, 2, 1, 1); this.scan = g.createPattern(c2, 'repeat'); }
+      g.fillStyle = this.scan; g.fillRect(0, 0, W, H);
+      const vg = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.4, W / 2, H / 2, Math.max(W, H) * 0.75);
+      vg.addColorStop(0, 'rgba(255,40,160,0)'); vg.addColorStop(1, 'rgba(60,0,90,0.35)');
+      g.fillStyle = vg; g.fillRect(0, 0, W, H);
+    }
     // falling snow
     if (win || ev === 'blizzard') {
       const want = ev === 'blizzard' ? 260 : 90;

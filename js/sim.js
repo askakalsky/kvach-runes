@@ -68,6 +68,18 @@ export const EMOTES = [
   { e: '😱', t: 'Аааа!' }, { e: '👋', t: 'Пока-пока!' }, { e: '🤡', t: 'Клоун!' }, { e: '❤️', t: 'GG' },
 ];
 export const WHISTLE_T = 20;
+export const DM_WIN = 20;
+export const WEAPONS = {
+  fist:    { name: 'Кулаки',   melee: true, range: 15, arc: 1.1, rate: 0.32, kill: false, col: '#e8c39e' },
+  bat:     { name: 'Бита',     melee: true, range: 21, arc: 1.5, rate: 0.45, kill: true, col: '#b07a44' },
+  knife:   { name: 'Нож',      melee: true, range: 17, arc: 1.1, rate: 0.26, kill: true, col: '#d8d8e0' },
+  katana:  { name: 'Катана',   melee: true, range: 24, arc: 1.7, rate: 0.4, kill: true, col: '#e8e8ff' },
+  pistol:  { name: 'Пистолет', ammo: 12, rate: 0.3, pellets: 1, spread: 0.04, range: 260, col: '#9a9aa8' },
+  shotgun: { name: 'Дробовик', ammo: 6, rate: 0.8, pellets: 7, spread: 0.3, range: 150, col: '#8a5a2a' },
+  uzi:     { name: 'Узи',      ammo: 30, rate: 0.085, pellets: 1, spread: 0.14, range: 210, col: '#3a3a44' },
+  rifle:   { name: 'Автомат',  ammo: 24, rate: 0.13, pellets: 1, spread: 0.05, range: 300, col: '#4a4a3a' },
+};
+const WEAPON_SPOTS = ['pistol', 'shotgun', 'uzi', 'bat', 'rifle', 'knife', 'pistol', 'katana', 'shotgun', 'uzi', 'bat', 'pistol', 'rifle', 'knife', 'shotgun', 'uzi'];
 export const MODES = {
   classic: { name: 'Классика', desc: 'Один квач. Касание — и квач уже ты. Побеждает тот, кто меньше всех пробыл квачом.' },
   heroes:  { name: 'Герои', desc: 'Классический квач, но каждый — герой со своей способностью (кнопка действия) и пассивкой. Выбери героя в лобби.' },
@@ -77,24 +89,25 @@ export const MODES = {
   ctf:     { name: 'Захват флага', desc: 'Две команды. Утащи чужой флаг к себе на базу. На своей половине касанием отправляешь врага в тюрьму. До 3 очков.' },
   hide:    { name: 'Прятки', desc: '30 секунд прячься! Потом гаснет свет, и водящий ищет с фонариком. Найденные начинают искать вместе с ним.' },
   koth:    { name: 'Король горы', desc: 'Стой в золотом круге один — копишь очки. Толкай соперников кнопкой «Толчок». Круг иногда переезжает. До 45 очков.' },
+  dm:      { name: 'Майами', desc: 'Deathmatch в неоновом здании. Подбирай пушки, биты и катаны — всё убивает с одного удара. Кулаки сбивают с ног. Серии убийств дают КОМБО. До 20 убийств.' },
   pacman:  { name: 'Пакмен', desc: 'Лабиринт с точками и мобами. Ешь точки, бери суперточки — и сам охоться на мобов! 3 жизни, больше всех очков — победа.' },
 };
 export const EVENTS = {
   night:    { name: 'Ночь',              text: 'Солнце село. Видно только то, что рядом.', dur: 20, no: ['hide'] },
   frost:    { name: 'Гололёд',           text: 'Земля покрылась льдом. Держись!', dur: 15 },
-  rain:     { name: 'Звездопад рун',     text: 'С неба посыпались руны!', dur: 0 },
+  rain:     { name: 'Звездопад рун',     text: 'С неба посыпались руны!', dur: 0, no: ['dm'] },
   adren:    { name: 'Ярость квача',      text: 'Квач стал быстрее на 25%!', dur: 15, only: ['classic', 'heroes', 'bomb', 'infect'] },
   chaos:    { name: 'Буря телепортов',   text: 'Всех раскидало по карте!', dur: 0, no: ['hide', 'ctf', 'pacman'] },
-  giant:    { name: 'Безумие рун',       text: 'Все получили случайную руну!', dur: 0 },
+  giant:    { name: 'Безумие рун',       text: 'Все получили случайную руну!', dur: 0, no: ['dm'] },
   fog:      { name: 'Туман',             text: 'Густой туман. Мини-карта ослепла.', dur: 20, no: ['hide'] },
   rush:     { name: 'Спешка',            text: 'Все бегают на 30% быстрее!', dur: 15 },
   carousel: { name: 'Карусель',          text: 'Все поменялись местами по кругу!', dur: 0, no: ['hide', 'ctf', 'pacman'] },
-  gold:     { name: 'Золотая руна',      text: 'Где-то появилась золотая руна. Хватай!', dur: 0 },
+  gold:     { name: 'Золотая руна',      text: 'Где-то появилась золотая руна. Хватай!', dur: 0, no: ['dm'] },
   meteor:   { name: 'Метеоритный дождь', text: 'С неба падают камни! Беги из красных кругов.', dur: 12, hw: 'Тыквопад', no: ['hide', 'pacman'] },
   tiny:     { name: 'Лилипуты',          text: 'Все уменьшились на 15 секунд!', dur: 0 },
   mirror:   { name: 'Зазеркалье',        text: 'Управление перевёрнуто!', dur: 10 },
   coup:     { name: 'Переворот',         text: 'Квачом назначен случайный игрок!', dur: 0, only: ['classic', 'heroes'] },
-  spirits:  { name: 'Ночь духов',        text: 'Духи вышли на охоту. Не дай им коснуться!', dur: 20, theme: ['halloween'], no: ['hide', 'pacman'] },
+  spirits:  { name: 'Ночь духов',        text: 'Духи вышли на охоту. Не дай им коснуться!', dur: 20, theme: ['halloween'], no: ['hide', 'pacman', 'dm'] },
   blizzard: { name: 'Метель',            text: 'Снежная буря: ничего не видно и скользко!', dur: 15, theme: ['winter', 'newyear'], no: ['hide'] },
   santa:    { name: 'Дед Мороз',         text: 'Над картой пролетели сани и рассыпали подарки!', dur: 0, theme: ['newyear'] },
 };
@@ -193,6 +206,7 @@ export function moveBody(map, p, ax, ay, dt, mult, slip, noclip) {
 export function pickMapType(mode, wanted) {
   if (mode === 'bomber') return 'arena';
   if (mode === 'pacman') return 'pacman';
+  if (mode === 'dm') return 'neon';
   if (MAP_TYPES[wanted]) return wanted;
   const pool = mode === 'hide' ? ['village', 'magic', 'fort', 'graveyard', 'meadow', 'beach'] : Object.keys(MAP_TYPES);
   return pick(pool);
@@ -233,6 +247,7 @@ export class Sim {
     }
     if (this.mode === 'koth') { this.zone = { x: 0, y: 0, r: 38, t: 0 }; this.moveZone(); }
     this.fuse = this.newFuse();
+    if (this.mode === 'dm') this.dmSetup();
     const runes = { bomber: 2, pacman: 2 }[this.mode] ?? 5;
     for (let i = 0; i < runes; i++) this.spawnRune();
   }
@@ -296,6 +311,7 @@ export class Sim {
       x: spot[0], y: spot[1], vx: 0, vy: 0, fdx: 0, fdy: 1, m: 0, ax: 0, ay: 0, z: 0, stairs: 0,
       it: false, alive: true, ghost: false, ghostCd: 0, score: 0, rune: null, held: 0, fx: FX0(), st: ST0(),
       tp: 0, portalCd: 0, tagCd: 0, useSeq: 0, bombSeq: 0, outAt: 0, shoveCd: 0, carry: -1, emoteCd: 0,
+      wpn: 'fist', ammo: 0, fireCd: 0, fire: false, dead: 0, down: 0, pts: 0, combo: 0, comboT: 0,
       hero: this.mode === 'heroes' ? (HEROES[r.hero] ? r.hero : pick(HERO_KEYS)) : null, abilCd: 2,
       lives: 3, maxB: 1, range: 2, boots: 0,
       hist: [], histT: 0,
@@ -309,6 +325,7 @@ export class Sim {
   fx(k, x, y, extra) { this.fxq.push(Object.assign({ k, x: r1(x), y: r1(y) }, extra)); }
 
   spawnRune(k, at) {
+    if (this.mode === 'dm') return;
     const ps = this.players;
     for (let tries = 0; tries < 30; tries++) {
       const [x, y] = at || pick(this.map.walk);
@@ -353,6 +370,7 @@ export class Sim {
     if (this.mode === 'bomber') return this.placeBomb(p);
     if (this.mode === 'koth') return this.push(p);
     if (this.mode === 'heroes') return this.useAbility(p);
+    if (this.mode === 'dm') return;
     this.useRune(p);
   }
   emote(p, e) {
@@ -400,6 +418,7 @@ export class Sim {
   }
 
   useRune(p) {
+    if (this.mode === 'dm') return this.throwWeapon(p);
     if (!p.alive || !p.rune || this.phase !== 'play' || p.fx.frozen > 0) return;
     if (this.mode === 'hide' && this.hideT > 0 && p.it) return;
     const k = p.rune, f = p.fx;
@@ -602,6 +621,176 @@ export class Sim {
     return this._floor;
   }
 
+  // ---------- deathmatch (Miami) ----------
+  dmSetup() {
+    this.pickups = []; this.thrown = [];
+    const spots = this.spread(WEAPON_SPOTS.length, [], this.map.walk);
+    spots.forEach(([x, y], i) => this.pickups.push({ id: this.uid++, x, y, k: WEAPON_SPOTS[i], ammo: WEAPONS[WEAPON_SPOTS[i]].ammo || 0, home: true, wait: 0, life: 1e9 }));
+  }
+  // clear line for bullets and sight (walls, trees, furniture block)
+  los(x0, y0, x1, y1) {
+    const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 5);
+    for (let i = 1; i < n; i++) {
+      const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n, ti = tileIdx(x, y);
+      if (isSolidT(this.map.g[ti]) || this.map.dyn.has(ti)) return false;
+    }
+    return true;
+  }
+  attack(p) {
+    if (!p.alive || p.fx.stun > 0 || p.fx.frozen > 0 || p.fireCd > 0 || this.phase !== 'play') return;
+    const w = WEAPONS[p.wpn];
+    let ax = p.aimx ?? p.fdx, ay = p.aimy ?? p.fdy;
+    const l = Math.hypot(ax, ay) || 1; ax /= l; ay /= l;
+    const cx = p.x, cy = p.y - 6;
+    if (w.melee) {
+      p.fireCd = w.rate;
+      this.fx('swing', p.x, p.y, { id: p.id, w: p.wpn, ax: r2(ax), ay: r2(ay) });
+      for (const q of this.players) {
+        if (q === p || !q.alive || !sameLevel(this.map, p, q)) continue;
+        const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy);
+        if (d > w.range + 5 || (d > 6 && (dx * ax + dy * ay) / d < Math.cos(w.arc / 2)) || !this.los(p.x, p.y, q.x, q.y)) continue;
+        if (q.fx.shield > 0) continue;
+        if (w.kill || q.down > 0) this.killDM(q, p, ax, ay);
+        else this.knockdown(q, p, ax, ay);
+      }
+      return;
+    }
+    if (p.ammo <= 0) { p.fireCd = 0.35; this.fx('empty', p.x, p.y, { id: p.id }); return; }
+    p.ammo--; p.fireCd = w.rate;
+    const ends = [], base = Math.atan2(ay, ax);
+    for (let k = 0; k < w.pellets; k++) {
+      const a = base + (Math.random() - 0.5) * 2 * w.spread, dx = Math.cos(a), dy = Math.sin(a);
+      let ex = cx, ey = cy, victim = null;
+      for (let s = 6; s <= w.range; s += 4) {
+        const x = cx + dx * s, y = cy + dy * s, ti = tileIdx(x, y);
+        if (isSolidT(this.map.g[ti]) || this.map.dyn.has(ti)) break;
+        ex = x; ey = y;
+        victim = this.players.find(q => q !== p && q.alive && (q.x - x) ** 2 + (q.y - 6 - y) ** 2 < 49);
+        if (victim) break;
+      }
+      ends.push([Math.round(ex), Math.round(ey)]);
+      if (victim && victim.alive && victim.fx.shield <= 0) this.killDM(victim, p, dx, dy);
+    }
+    this.fx('shot', cx, cy, { id: p.id, w: p.wpn, e: ends });
+  }
+  knockdown(q, by, dx, dy) {
+    q.down = 1.7; q.fx.stun = Math.max(q.fx.stun, 1.7); q.vx = q.vy = 0;
+    this.shove(q, q.x - dx, q.y - dy, 10);
+    if (q.wpn !== 'fist') this.dropWeapon(q, 8);
+    this.fx('punch', q.x, q.y, { id: q.id, by: by.id });
+  }
+  dropWeapon(q, scatter = 0) {
+    if (q.wpn === 'fist') return;
+    this.pickups.push({ id: this.uid++, x: q.x + (Math.random() - 0.5) * scatter, y: q.y + (Math.random() - 0.5) * scatter, k: q.wpn, ammo: q.ammo, home: false, wait: 0, life: 15 });
+    q.wpn = 'fist'; q.ammo = 0;
+  }
+  killDM(q, by, dx, dy) {
+    if (!q.alive) return;
+    this.dropWeapon(q, 10);
+    q.alive = false; q.ghost = false; q.dead = 2.6; q.down = 0; q.fire = false;
+    for (const k in q.fx) q.fx[k] = 0;
+    if (by && by !== q) {
+      by.score++;
+      by.combo = by.comboT > 0 ? by.combo + 1 : 1; by.comboT = 3.5;
+      by.pts += 100 * by.combo;
+      if (by.score >= DM_WIN) this.finish();
+    } else q.score = Math.max(0, q.score - 1);
+    this.fx('kill', q.x, q.y, { id: q.id, by: by ? by.id : '', c: by ? by.combo : 0, dx: r2(dx), dy: r2(dy) });
+  }
+  respawnDM(p) {
+    const foes = this.players.filter(q => q.alive && q !== p).map(q => [q.x, q.y]);
+    this.place(p, this.spread(1, foes, this.map.walk)[0]);
+    p.alive = true; p.dead = 0; p.fx.shield = 1.6; p.wpn = 'fist'; p.ammo = 0; p.fireCd = 0.4;
+    this.fx('spawn', p.x, p.y, { id: p.id });
+  }
+  throwWeapon(p) {
+    if (!p.alive || p.fx.stun > 0 || this.phase !== 'play') return;
+    const under = this.pickups.find(k => !k.wait && d2(k, p) < 12 * 12);
+    if (under) { this.takePickup(p, under); return; }
+    if (p.wpn === 'fist') return;
+    const ax = p.aimx ?? p.fdx, ay = p.aimy ?? p.fdy;
+    this.thrown.push({ id: this.uid++, x: p.x, y: p.y - 6, vx: ax * 320, vy: ay * 320, k: p.wpn, ammo: p.ammo, owner: p.id, t: 0.6 });
+    p.wpn = 'fist'; p.ammo = 0; p.fireCd = 0.25;
+    this.fx('throw', p.x, p.y, { id: p.id, ax: r2(ax), ay: r2(ay) });
+  }
+  takePickup(p, k) {
+    if (p.wpn !== 'fist') this.dropWeapon(p, 0);
+    p.wpn = k.k; p.ammo = k.ammo; p.fireCd = 0.15;
+    if (k.home) { k.wait = 12; k.ammo = WEAPONS[k.k].ammo || 0; } else k.life = 0;
+    this.fx('grab', k.x, k.y, { id: p.id, w: p.wpn });
+  }
+  updateDM(dt) {
+    for (const p of this.players) {
+      if (!p.alive) { if (p.dead > 0) { p.dead -= dt; if (p.dead <= 0 && this.phase === 'play') this.respawnDM(p); } continue; }
+      p.fireCd -= dt; p.down = Math.max(0, p.down - dt);
+      if (p.comboT > 0) { p.comboT -= dt; if (p.comboT <= 0) p.combo = 0; }
+      if (p.fire && p.fireCd <= 0) this.attack(p);
+      if (p.wpn === 'fist' && p.down <= 0) {
+        const k = this.pickups.find(q => !q.wait && d2(q, p) < 11 * 11);
+        if (k) this.takePickup(p, k);
+      }
+    }
+    for (const k of this.pickups) { if (k.wait > 0) { k.wait -= dt; if (k.wait <= 0) k.wait = 0; } if (!k.home) k.life -= dt; }
+    this.pickups = this.pickups.filter(k => k.home || k.life > 0);
+    for (const t of this.thrown) {
+      t.t -= dt;
+      const nx = t.x + t.vx * dt, ny = t.y + t.vy * dt, ti = tileIdx(nx, ny);
+      const hitWall = isSolidT(this.map.g[ti]) || this.map.dyn.has(ti);
+      const victim = this.players.find(q => q.alive && q.id !== t.owner && (q.x - nx) ** 2 + (q.y - 6 - ny) ** 2 < 100);
+      if (victim && victim.fx.shield <= 0) { this.knockdown(victim, this.byId(t.owner) || victim, t.vx / 320, t.vy / 320); t.t = 0; }
+      if (hitWall || t.t <= 0) {
+        t.t = 0;
+        this.pickups.push({ id: this.uid++, x: hitWall ? t.x : nx, y: (hitWall ? t.y : ny) + 6, k: t.k, ammo: t.ammo, home: false, wait: 0, life: 15 });
+      } else { t.x = nx; t.y = ny; }
+    }
+    this.thrown = this.thrown.filter(t => t.t > 0);
+  }
+  botDM(p, dt) {
+    const ai = p.ai;
+    if (this.unstick(p, dt)) { p.fire = false; return; }
+    const w = WEAPONS[p.wpn];
+    ai.th = (ai.th || 0) - dt;
+    if (ai.th <= 0) {
+      ai.th = 0.15 + Math.random() * 0.1;
+      let ne = null, nd = 1e9;
+      for (const q of this.players) if (q !== p && q.alive && q.fx.invis <= 0) { const d = d2(p, q); if (d < nd && d < 240 * 240 && this.los(p.x, p.y - 6, q.x, q.y - 6)) { nd = d; ne = q; } }
+      ai.ne = ne; ai.nd = Math.sqrt(nd);
+      if (!ne) ai.react = 0.25 + Math.random() * 0.25;
+      if (!w.melee && p.ammo <= 0) { if (ne && ai.nd < 140) { p.aimx = (ne.x - p.x) / ai.nd; p.aimy = (ne.y - p.y) / ai.nd; } this.throwWeapon(p); }
+      let gun = null, gd = 1e9;
+      for (const k of this.pickups) if (!k.wait && (WEAPONS[k.k].melee ? p.wpn === 'fist' : WEAPONS[p.wpn].melee || p.ammo <= 0)) { const d = d2(k, p); if (d < gd) { gd = d; gun = k; } }
+      ai.gun = gun && (!ne || gd < nd * 0.6 || p.wpn === 'fist') ? gun : null;
+      if (!ne && !ai.gun && (!ai.hunt || Math.random() < 0.05)) { const alive = this.players.filter(q => q !== p && q.alive); ai.hunt = alive.length ? pick(alive) : null; }
+    }
+    const ne = ai.ne && ai.ne.alive ? ai.ne : null;
+    ai.react = (ai.react || 0) - dt;
+    if (ne) {
+      const dx = ne.x - p.x, dy = ne.y - p.y, d = Math.hypot(dx, dy) || 1;
+      const want = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.25;
+      const cur = Math.atan2(p.aimy ?? p.fdy, p.aimx ?? p.fdx);
+      let diff = ((want - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      const turn = Math.max(-7 * dt, Math.min(7 * dt, diff));
+      p.aimx = Math.cos(cur + turn); p.aimy = Math.sin(cur + turn);
+      const aligned = Math.abs(diff) < 0.25 && ai.react <= 0;
+      if (w.melee) { p.fire = aligned && d < w.range + 6; if (!ai.gun) this.steer(p, ne.x, ne.y, 1); }
+      else {
+        p.fire = aligned && d < w.range * 0.9;
+        const sg = Math.sin(this.time * 1.7 + p.x * 0.01) > 0 ? 1 : -1, sx = -dy / d * sg, sy = dx / d * sg;
+        if (d > 130) this.goTo(p, dt, ne.x, ne.y);
+        else if (d < 55) this.steer(p, p.x - dx + sx * 20, p.y - dy + sy * 20, 1);
+        else { p.ax = sx * 0.8; p.ay = sy * 0.8; }
+      }
+      if (ai.gun && w.melee && d > 70) this.goTo(p, dt, ai.gun.x, ai.gun.y);
+    } else {
+      p.fire = false;
+      if (ai.gun) this.goTo(p, dt, ai.gun.x, ai.gun.y);
+      else if (ai.hunt && ai.hunt.alive) this.goTo(p, dt, ai.hunt.x, ai.hunt.y, 0.85);
+      else this.wander(p, 0.8);
+      const m = Math.hypot(p.ax, p.ay);
+      if (m > 0.2) { p.aimx = p.ax / m; p.aimy = p.ay / m; }
+    }
+  }
+
   // ---------- capture the flag ----------
   updateFlags(dt) {
     const mid = MW * TS / 2;
@@ -802,6 +991,7 @@ export class Sim {
       if (!p.bot) continue;
       if (!p.alive) { if (p.ghost) this.botGhost(p); continue; }
       if (bomber) this.botBomber(p, dt);
+      else if (this.mode === 'dm') this.botDM(p, dt);
       else if (this.mode === 'pacman') this.botPacman(p, dt);
       else if (this.mode === 'ctf') this.botCTF(p, dt);
       else if (this.mode === 'koth') this.botKoth(p, dt);
@@ -812,7 +1002,7 @@ export class Sim {
     const ev = this.event && this.event.k;
     for (const p of ps) {
       if (!(p.bot || p.id === this.localId)) continue;
-      if (p.alive) moveBody(map, p, p.ax, p.ay, dt, speedMult(p, this.mode, ev, p.bot), slippery(map, p, ev));
+      if (p.alive) { moveBody(map, p, p.ax, p.ay, dt, speedMult(p, this.mode, ev, p.bot), slippery(map, p, ev)); if (this.mode === 'dm' && p.aimx !== undefined) { p.fdx = p.aimx; p.fdy = p.aimy; } }
       else if (p.ghost) { const f = p.fx; f.stun = f.frozen = 0; moveBody(map, p, p.ax, p.ay, dt, 0.9, false, true); }
     }
 
@@ -963,7 +1153,8 @@ export class Sim {
       }
       this.flames = this.flames.filter(f => f.t > 0);
     }
-    if (this.mode === 'pacman') this.updateMobs(dt);
+    if (this.mode === 'dm') this.updateDM(dt);
+    else if (this.mode === 'pacman') this.updateMobs(dt);
     else if (this.mode === 'ctf') this.updateFlags(dt);
     else if (this.mode === 'koth') this.updateZone(dt);
     else if (!bomber && !(this.mode === 'hide' && this.hideT > 0)) this.checkTags();
@@ -1071,6 +1262,10 @@ export class Sim {
       ps.sort((a, b) => (b.alive - a.alive) || (b.lives - a.lives) || (b.score - a.score) || (b.outAt - a.outAt));
       return out(`Победил ${ps[0].name}!`, ps.map((p, i) => row(p, `${p.alive ? '❤' + p.lives : 'выбыл'} · взрывов: ${p.score}`, i === 0)));
     }
+    if (this.mode === 'dm') {
+      ps.sort((a, b) => b.score - a.score || b.pts - a.pts);
+      return out(`${ps[0].name} — хозяин Майами!`, ps.map((p, i) => row(p, `убийств: ${p.score} · очков: ${p.pts}`, i === 0)));
+    }
     if (this.mode === 'pacman') {
       ps.sort((a, b) => b.score - a.score);
       const clear = this.map.pellets.size === 0 ? ' Лабиринт очищен!' : '';
@@ -1105,6 +1300,7 @@ export class Sim {
         if (bomber) { o.bo = p.boots; o.pw = [p.maxB, p.range]; }
         if (this.mode === 'ctf') { o.tm = p.team; o.c = p.carry; }
         if (p.hero) { o.h = p.hero; o.cd = r1(p.abilCd); }
+        if (this.mode === 'dm') { o.w = p.wpn; o.am = p.ammo; o.dn = p.down > 0 ? 1 : 0; o.pt = p.pts; }
         return o;
       }),
       ru: this.runes.map(r => [r.id, r.x, r.y, r.k]),
@@ -1127,6 +1323,7 @@ export class Sim {
       s.pe = this.eaten; s.fr = r1(this.fright);
     }
     if (this.mode === 'ctf') { s.fl = this.flags.map(f => [Math.round(f.x), Math.round(f.y), f.carrier || '']); s.ts = this.teamScore; }
+    if (this.mode === 'dm') { s.pk = this.pickups.filter(k => !k.wait).map(k => [k.id, Math.round(k.x), Math.round(k.y), k.k]); s.tw = this.thrown.map(k => [k.id, Math.round(k.x), Math.round(k.y), k.k]); }
     if (this.mode === 'koth') s.kz = [Math.round(this.zone.x), Math.round(this.zone.y), this.zone.r, this.zone.owner || '', this.zone.contested ? 1 : 0, r1(this.zone.t)];
     return s;
   }

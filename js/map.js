@@ -314,6 +314,46 @@ function genPacman(c) {
   return { pellets, power, home: [(hx + 3) * TS + 8, (hy + 2) * TS + 8], door: [(hx + 3) * TS + 8, (hy - 1) * TS + 8] };
 }
 
+// Hotline-style building: BSP-split rooms with doorways, coloured floors, furniture
+function genNeon(c) {
+  const { ri, R, g } = c;
+  g.fill(T.WALL);
+  const room = new Uint8Array(MW * MH);
+  const leaves = [];
+  const split = (x, y, w, h, depth) => {
+    const canV = w >= 14, canH = h >= 11;
+    if (depth > 4 || (!canV && !canH) || (depth > 2 && R() < 0.2)) { leaves.push([x, y, w, h]); return; }
+    const vert = canV && (!canH || w / h > 1.2 || (w / h > 0.8 && R() < 0.5));
+    if (vert) {
+      const s = ri(x + 6, x + w - 7);
+      split(x, y, s - x, h, depth + 1); split(s + 1, y, x + w - s - 1, h, depth + 1);
+      const doors = h > 14 ? 2 : 1;
+      for (let d = 0; d < doors; d++) { const dy = ri(y + 1, y + h - 3); c.set(s, dy, T.FLOOR); c.set(s, dy + 1, T.FLOOR); }
+    } else {
+      const s = ri(y + 5, y + h - 6);
+      split(x, y, w, s - y, depth + 1); split(x, s + 1, w, y + h - s - 1, depth + 1);
+      const doors = w > 18 ? 2 : 1;
+      for (let d = 0; d < doors; d++) { const dx = ri(x + 1, x + w - 3); c.set(dx, s, T.FLOOR); c.set(dx + 1, s, T.FLOOR); }
+    }
+  };
+  split(1, 1, MW - 2, MH - 2, 0);
+  leaves.forEach(([x, y, w, h], k) => {
+    const style = k % 5;
+    for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) { c.set(xx, yy, T.FLOOR); room[yy * MW + xx] = style; }
+  });
+  // doorway tiles take the style of a neighbouring room
+  for (let i = 0; i < MW * MH; i++) if (g[i] === T.FLOOR && room[i] === 0) { const n = [i - 1, i + 1, i - MW, i + MW].find(j => g[j] === T.FLOOR && room[j]); if (n !== undefined) room[i] = room[n]; }
+  // furniture and pillars
+  for (const [x, y, w, h] of leaves) {
+    const n = Math.floor(w * h / 30);
+    for (let k = 0; k < n; k++) {
+      const fx = ri(x + 1, x + w - 2), fy = ri(y + 1, y + h - 2);
+      if (c.free8(fx, fy) && g[fy * MW + fx] === T.FLOOR) c.set(fx, fy, R() < 0.25 ? T.WALL : T.DECOR);
+    }
+  }
+  return room;
+}
+
 function genArena(c) {
   const { R, g } = c;
   g.fill(T.TREE);
@@ -365,9 +405,10 @@ function carveBases(c) {
 export function genMap(seed, type = 'meadow', theme = '', mode = '') {
   const c = makeCtx(seed), g = c.g;
   let bases = null;
-  let crates = [], pac = null;
+  let crates = [], pac = null, room = null;
   if (type === 'arena') crates = genArena(c);
   else if (type === 'pacman') pac = genPacman(c);
+  else if (type === 'neon') room = genNeon(c);
   else {
     ({ village: genVillage, maze: genMaze, islands: genIslands, graveyard: genGraveyard, beach: genBeach, magic: genMagic, fort: genFort }[type] || genMeadow)(c);
     if (theme === 'halloween') { c.scatter(12, T.DECOR, [T.GRASS, T.DIRT]); c.scatter(6, T.TOMB, [T.GRASS]); }
@@ -397,7 +438,7 @@ export function genMap(seed, type = 'meadow', theme = '', mode = '') {
       for (let x = MW - 2; x > MW / 2 && b < 0; x--) if (g[y * MW + x] === T.GRASS) b = y * MW + x;
       if (a >= 0 && b >= 0) { g[a] = T.PORTAL; g[b] = T.PORTAL; portals.push([a, b]); }
     }
-  } else if (type !== 'arena') {
+  } else if (type !== 'arena' && type !== 'neon') {
     const open8 = i => {
       const x = i % MW, y = (i / MW) | 0;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = c.get(x + dx, y + dy); if (isSolidT(t) || t === T.WATER || t === T.STAIRS) return false; }
@@ -419,7 +460,7 @@ export function genMap(seed, type = 'meadow', theme = '', mode = '') {
   }
 
   const belt = new Int8Array(MW * MH).fill(-1);
-  if (type !== 'arena' && type !== 'pacman') genBelts(c, belt, type === 'maze' ? 4 : 7);
+  if (type !== 'arena' && type !== 'pacman' && type !== 'neon') genBelts(c, belt, type === 'maze' ? 4 : 7);
 
   const crateSet = new Set(crates);
   const spawns = [], walk = [], hides = [];
@@ -435,7 +476,7 @@ export function genMap(seed, type = 'meadow', theme = '', mode = '') {
   return {
     g, up: c.up, belt, dyn: new Map(), crates: crateSet, portals, spawns, walk, hides, type, theme,
     pellets: new Set(pac ? pac.pellets : []), power: new Set(pac ? pac.power : []),
-    home: pac && pac.home, door: pac && pac.door, bases,
+    home: pac && pac.home, door: pac && pac.door, bases, room,
   };
 }
 
