@@ -1,7 +1,7 @@
 // Voxel 3D renderer for the same game state. Draws the world with three.js and
 // uses the 2D canvas on top as an overlay for particles, names and floating text.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-import { TS, MW, MH, T, isHideT, arenaSpiral, isWinter, BELT_SPEED } from './map.js';
+import { TS, MW, MH, T, isHideT, isSolidT, arenaSpiral, isWinter, BELT_SPEED } from './map.js';
 import { RUNES, ITEMS, TEAM_COLS, MOB_COLS, HEROES, EMOTES, WEAPONS } from './sim.js';
 import { CAPES } from './skins.js';
 
@@ -175,6 +175,11 @@ export class Renderer3D {
   tracer(x0, y0, x1, y1) { this.tracers.push({ x0, y0, x1, y1, t: 0.09 }); }
   blood(x, y) { this.bloods.push([x, y, 0.6 + Math.random() * 0.5]); if (this.bloods.length > 150) this.bloods.shift(); }
   shell() { }
+  inSight(x0, y0, x1, y1) {
+    const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 4);
+    for (let i = 1; i < n; i++) { const tx = Math.floor((x0 + (x1 - x0) * i / n) / TS), ty = Math.floor((y0 + (y1 - y0) * i / n) / TS), k = ty * MW + tx; if (isSolidT(this.map.g[k]) || this.map.dyn.has(k)) return false; }
+    return true;
+  }
   muzzle(x, y) {
     if (!this.mz) { this.mz = []; for (let i = 0; i < 3; i++) { const l = new THREE.PointLight('#ffe8a0', 0, 7, 1.2); this.scene.add(l); this.mz.push({ l, t: 0 }); } }
     const slot = this.mz.reduce((a, b) => a.t < b.t ? a : b);
@@ -428,7 +433,9 @@ export class Renderer3D {
     const inHide = p => isHideT(map.g[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)]);
     const underUp = p => (p.z || 0) === 0 && map.up[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)];
     const hiddenFor = p => {
-      if (reveal || p.id === v.me) return false;
+      if (p.id === v.me) return false;
+      if (v.mode === 'dm' && me && !this.inSight(me.x, me.y - 6, p.x, p.y - 6)) return true;
+      if (reveal) return false;
       if (p.fx && p.fx.invis > 0) return true;
       const far = !me || Math.hypot(me.x - p.x, me.y - p.y) > 28;
       return (inHide(p) && (far || p.hero === 'ninja')) || (underUp(p) && me && (me.z || 0) === 1 && far);
@@ -472,7 +479,7 @@ export class Renderer3D {
     if (v.mode === 'dm') for (const p of v.players) {
       if (p.alive || p.ghost) continue;
       const m = this.pawnFor(p); seen.add(p.id);
-      m.root.visible = true; m.root.position.set(U(p.x), 0.18, U(p.y)); m.root.rotation.x = -Math.PI / 2; m.root.scale.setScalar(1);
+      m.root.visible = !me || this.inSight(me.x, me.y - 6, p.x, p.y - 6); m.root.position.set(U(p.x), 0.18, U(p.y)); m.root.rotation.x = -Math.PI / 2; m.root.scale.setScalar(1);
       m.gun.visible = false; m.marker.visible = m.ring.visible = m.shield.visible = false;
     }
     const hatFor = p => {

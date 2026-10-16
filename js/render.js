@@ -540,6 +540,25 @@ export class Renderer {
   hurt(id) { this.flashes.set(id, 0.14); this.anim(id, 'hurt', 0.25); }
   tracer(x0, y0, x1, y1) { this.tracers.push({ x0, y0, x1, y1, t: 0.09 }); }
   muzzle(x, y) { this.muzzles.push({ x, y, t: 0.08 }); }
+  blocks(x, y) { const tx = Math.floor(x / TS), ty = Math.floor(y / TS); if (tx < 0 || ty < 0 || tx >= MW || ty >= MH) return true; const i = ty * MW + tx; return isSolidT(this.map.g[i]) || this.map.dyn.has(i); }
+  // straight line between two points is not crossed by walls, trees or furniture
+  inSight(x0, y0, x1, y1) {
+    const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 4);
+    for (let i = 1; i < n; i++) if (this.blocks(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n)) return false;
+    return true;
+  }
+  // what the eye at (ox, oy) can see: a fan of rays, each stopping a little inside the first wall
+  visPoly(ox, oy, radius, rays = 220) {
+    const pts = [];
+    for (let k = 0; k < rays; k++) {
+      const a = k / rays * Math.PI * 2, dx = Math.cos(a), dy = Math.sin(a);
+      let s2 = 3;
+      for (; s2 < radius; s2 += 3) if (this.blocks(ox + dx * s2, oy + dy * s2)) { s2 += 7; break; }
+      s2 = Math.min(s2, radius);
+      pts.push([ox + dx * s2, oy + dy * s2]);
+    }
+    return pts;
+  }
   screenToWorld(sx, sy) { return [sx * this.dpr / this.zoom + (this.lastCx || 0), sy * this.dpr / this.zoom + (this.lastCy || 0)]; }
   // blood splatter stays on the floor for the whole round
   blood(x, y, dx = 0, dy = 0) {
@@ -592,6 +611,7 @@ export class Renderer {
     for (const [id, a] of this.anims) { a.t -= dt; if (a.t <= 0) this.anims.delete(id); }
     for (const [id, f] of this.flashes) { if (f - dt <= 0) this.flashes.delete(id); else this.flashes.set(id, f - dt); }
     const dm = v.mode === 'dm';
+    const sight = dm && me ? this.visPoly(me.x, me.y - 6, 420) : null;
     // weapons lying around (deathmatch)
     if (v.pickups) for (const k of v.pickups) {
       g.globalAlpha = 0.25 + 0.15 * Math.sin(t * 5 + k.id); disc(g, '#ff3fa4', Math.round(k.x), Math.round(k.y) - 1, 7); g.globalAlpha = 1;
@@ -746,7 +766,9 @@ export class Renderer {
     const inHide = p => isHideT(map.g[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)]);
     const underUp = p => (p.z || 0) === 0 && map.up[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)];
     const hiddenFor = p => {
-      if (reveal || p.id === v.me) return false;
+      if (p.id === v.me) return false;
+      if (sight && !this.inSight(me.x, me.y - 6, p.x, p.y - 6)) return true;
+      if (reveal) return false;
       if (p.fx && p.fx.invis > 0) return true;
       const far = !me || Math.hypot(me.x - p.x, me.y - p.y) > 28;
       return (inHide(p) && (far || p.hero === 'ninja')) || (underUp(p) && me && (me.z || 0) === 1 && far);
@@ -930,7 +952,7 @@ export class Renderer {
       d.fillStyle = `rgba(${dark.col},${dark.a})`; d.fillRect(0, 0, W, H);
       d.globalCompositeOperation = 'destination-out';
       const lights = [];
-      if (me && (me.alive || me.ghost) && dark.r) lights.push([me.x, me.y - 6, dark.r]);
+      if (me && (me.alive || me.ghost || dm) && dark.r) lights.push([me.x, me.y - 6, me.alive || !dm ? dark.r : 60]);
       if (ev === 'night') {
         for (const p of v.players) if (p.alive && p.it && p !== me) lights.push([p.x, p.y - 6, 22]);
         for (const r of v.runes) lights.push([r.x, r.y - 4, 14]);
@@ -960,6 +982,13 @@ export class Renderer {
         const h2 = d.createRadialGradient(px, py, 0, px, py, 30 * z);
         h2.addColorStop(0, 'rgba(0,0,0,1)'); h2.addColorStop(1, 'rgba(0,0,0,0)');
         d.fillStyle = h2; d.fillRect(px - 30 * z, py - 30 * z, 60 * z, 60 * z);
+      }
+      if (sight) {
+        d.globalCompositeOperation = 'source-over';
+        d.fillStyle = 'rgba(2,0,6,0.985)';
+        d.beginPath(); d.rect(0, 0, W, H);
+        sight.forEach(([x, y], i) => { const sx = (x - cx) * z, sy = (y - cy) * z; if (i) d.lineTo(sx, sy); else d.moveTo(sx, sy); });
+        d.closePath(); d.fill('evenodd');
       }
       g.drawImage(this.dark, 0, 0);
     }
@@ -999,10 +1028,13 @@ export class Renderer {
 
     // in the dark deathmatch, bullets and muzzle flashes glow above the darkness
     if (dm) {
+      g.save();
+      if (sight) { g.beginPath(); sight.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.clip(); }
       for (const mz of this.muzzles) { mz.t -= dt; g.globalAlpha = Math.max(0, mz.t / 0.08); disc(g, '#fff3b0', Math.round(mz.x), Math.round(mz.y), 3); }
       this.muzzles = this.muzzles.filter(mz => mz.t > 0);
       for (const tr of this.tracers) { g.globalAlpha = Math.max(0, tr.t / 0.09) * 0.9; g.strokeStyle = '#fff6a0'; g.lineWidth = 1; g.beginPath(); g.moveTo(tr.x0, tr.y0); g.lineTo(tr.x1, tr.y1); g.stroke(); }
       g.globalAlpha = 1;
+      g.restore();
     } else this.muzzles = [];
     g.font = '7px "Press Start 2P", monospace';
     for (const q of this.texts) {

@@ -773,7 +773,7 @@ function updateHud(v, dt) {
   else if (v.mode === 'pacman') sub = `точек: ${R.map.pellets.size}${v.fright > 0 ? ` · <b style="color:#6a8aff">СИЛА ${Math.ceil(v.fright)}</b>` : ''}`;
   else if (v.mode === 'hide') sub = hiding ? (me && me.it ? 'Водишь. Не подглядывай!' : 'Прячься!') : `Спрятались: <b>${v.players.filter(p => p.alive && !p.it).length}</b>${me && me.it ? '<br>ты ищешь 🔦' : ''}<br>🎵 свист через ${Math.ceil(v.whistleT || 0)}`;
   else sub = `Живых: <b>${v.players.filter(p => p.alive && !p.it).length}</b>/${v.players.length}`;
-  if (me && !me.alive) sub += '<br>👻 ты призрак';
+  if (me && !me.alive && v.mode !== 'dm') sub += '<br>👻 ты призрак';
   $('sub').innerHTML = sub;
   const rows = v.players.slice();
   const scored = ['koth', 'pacman', 'ctf', 'dm'].includes(v.mode);
