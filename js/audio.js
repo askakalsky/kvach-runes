@@ -77,7 +77,27 @@ const MEL_B = [
   [[0, 83, 2], [2, 81, 2], [4, 79, 2], [6, 83, 2], [8, 86, 4], [12, 83, 2], [14, 79, 2]],
 ];
 
-function tempo() { return mode === 'menu' ? 108 : mode === 'hurry' ? 168 : 138; }
+// Halloween: Am - Dm - E - Am in harmonic minor
+const PROG_HW = [
+  { root: 45, arp: [69, 72, 76] }, { root: 50, arp: [74, 77, 81] },
+  { root: 40, arp: [68, 71, 76] }, { root: 45, arp: [69, 72, 76] },
+];
+const MEL_HW_A = [
+  [[0, 76, 2], [2, 77, 2], [4, 76, 2], [6, 75, 2], [8, 76, 4], [12, 72, 4]],
+  [[0, 74, 2], [2, 77, 2], [4, 81, 4], [8, 80, 2], [10, 81, 2], [12, 77, 4]],
+  [[0, 76, 2], [2, 80, 2], [4, 83, 4], [8, 80, 2], [10, 76, 2], [12, 74, 4]],
+  [[0, 72, 2], [2, 71, 2], [4, 69, 6], [12, 64, 4]],
+];
+const MEL_HW_B = [
+  [[0, 81, 1], [1, 80, 1], [2, 81, 2], [4, 76, 2], [6, 72, 2], [8, 69, 2], [10, 72, 2], [12, 76, 4]],
+  [[0, 77, 1], [1, 76, 1], [2, 77, 2], [4, 74, 2], [6, 77, 2], [8, 81, 4], [12, 86, 4]],
+  [[0, 83, 2], [2, 80, 2], [4, 76, 2], [6, 80, 2], [8, 83, 2], [10, 88, 2], [12, 87, 4]],
+  [[0, 88, 2], [2, 84, 2], [4, 81, 4], [8, 76, 2], [10, 72, 2], [12, 69, 4]],
+];
+let theme = '';
+export function setTheme(t) { theme = t || ''; }
+
+function tempo() { return (mode === 'menu' ? 108 : mode === 'hurry' ? 168 : 138) - (theme === 'halloween' && mode !== 'hurry' ? 10 : 0); }
 
 function sched() {
   if (!ac || ac.state !== 'running') return;
@@ -92,8 +112,9 @@ function sched() {
 function playStep(s, t) {
   if (mode === 'off') return;
   const sx = 60 / tempo() / 4;
-  const bar = (s >> 4) % 8, st = s % 16, ch = PROG[bar % 4];
-  const mel = (bar < 4 ? MEL_A : MEL_B)[bar % 4];
+  const hw = theme === 'halloween';
+  const bar = (s >> 4) % 8, st = s % 16, ch = (hw ? PROG_HW : PROG)[bar % 4];
+  const mel = (hw ? (bar < 4 ? MEL_HW_A : MEL_HW_B) : (bar < 4 ? MEL_A : MEL_B))[bar % 4];
   const game = mode !== 'menu';
   if (st % 2 === 0) tone(t, mf(ch.root + (st % 4 === 2 ? 12 : 0)), sx * 1.8, 'triangle', 0.42, mus);
   if (game) tone(t, mf(ch.arp[st % 3] + (bar >= 4 ? 12 : 0)), sx * 0.8, p12, 0.045, mus);
@@ -144,6 +165,23 @@ export function sfx(name, vol = 1) {
     case 'event': [69, 73, 76, 81].forEach((n, i) => tone(t + i * 0.08, mf(n), 0.14, 'triangle', 0.3, d)); break;
     case 'end': [72, 76, 79, 84, 79, 84].forEach((n, i) => tone(t + i * 0.11, mf(n), 0.16, p25, 0.25, d)); break;
     case 'tick': tone(t, 1200, 0.04, 'square', 0.12, d); break;
+    case 'bombset': tone(t, 220, 0.08, 'square', 0.2 * v, d, 160); break;
+    case 'blast':
+      hit(t, 0.5, 0.5 * v, 1200, 'lowpass', d);
+      tone(t, 140, 0.35, 'sine', 0.45 * v, d, 35);
+      break;
+    case 'item': [72, 79, 84, 91].forEach((n, i) => tone(t + i * 0.04, mf(n), 0.07, p25, 0.18 * v, d)); break;
+    case 'hit': tone(t, 600, 0.35, 'square', 0.25 * v, d, 80); hit(t, 0.2, 0.3 * v, 800, 'lowpass', d); break;
+    case 'impact': hit(t, 0.3, 0.45 * v, 500, 'lowpass', d); tone(t, 90, 0.2, 'sine', 0.4 * v, d, 40); break;
+    case 'boo': {
+      const o = ac.createOscillator(), g = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain();
+      o.type = 'triangle'; o.frequency.setValueAtTime(520, t); o.frequency.exponentialRampToValueAtTime(240, t + 0.7);
+      lfo.frequency.value = 9; lg.gain.value = 25; lfo.connect(lg); lg.connect(o.frequency);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.28 * v, t + 0.05); g.gain.linearRampToValueAtTime(0, t + 0.7);
+      o.connect(g); g.connect(d); o.start(t); lfo.start(t); o.stop(t + 0.75); lfo.stop(t + 0.75);
+      break;
+    }
+    case 'sudden': [0, 1, 2, 3].forEach(i => tone(t + i * 0.18, i % 2 ? 660 : 880, 0.14, 'square', 0.22, d)); break;
     case 'click': tone(t, 700, 0.05, p25, 0.15, d); break;
   }
 }

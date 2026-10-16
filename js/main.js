@@ -1,5 +1,5 @@
-import { genMap } from './map.js';
-import { Sim, RUNES, MODES, EVENTS, STORYTELLERS, BOT_NAMES, speedMult, slippery, moveBody } from './sim.js';
+import { genMap, MAP_TYPES } from './map.js';
+import { Sim, RUNES, ITEMS, MODES, EVENTS, STORYTELLERS, BOT_NAMES, BOT_NAMES_HW, speedMult, slippery, moveBody, pickMapType, SUDDEN } from './sim.js';
 import { Renderer, drawPawn, drawRuneIcon } from './render.js';
 import * as A from './audio.js';
 import { input, joy, initInput, readMove } from './input.js';
@@ -24,7 +24,7 @@ const R = new Renderer(canvas);
 let role = null, myId = null, peer = null, hostConn = null;
 const conns = new Map();
 let roster = [];
-const settings = { mode: 'classic', bots: 3, dur: 180 };
+const settings = { mode: 'classic', bots: 3, dur: 180, map: 'random', theme: new Date().getMonth() === 9 ? 'halloween' : '' };
 let sim = null, pendingFx = [], lastSend = 0, results = null, nextPid = 1;
 let cl = null;
 let view = null;
@@ -34,7 +34,7 @@ function show(name) {
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('hidden', s.id !== name);
   $('hud').classList.toggle('hidden', name !== 'game' && name !== 'results');
   input.enabled = name === 'game';
-  joy.active = false; joy.id = null; input.useQ = 0;
+  joy.active = false; joy.id = null; input.useQ = 0; input.actQ = 0;
   if (name === 'menu' || name === 'lobby') A.setMusic('menu');
 }
 function toast(msg, ms = 2600) {
@@ -49,12 +49,17 @@ function center(txt, col) {
   c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop');
   centerT = 1.3;
 }
-function banner(e, story) {
+function banner(title, text, story) {
   const b = $('banner');
-  b.innerHTML = `<small>Рассказчик ${story}</small><b>${e.name}</b><span>${e.text}</span>`;
+  b.innerHTML = '';
+  for (const [tag, s] of [['small', story ? 'Рассказчик ' + story : ''], ['b', title], ['span', text]]) {
+    const el = document.createElement(tag); el.textContent = s; b.appendChild(el);
+  }
   b.classList.remove('on'); void b.offsetWidth; b.classList.add('on');
   clearTimeout(banner.h); banner.h = setTimeout(() => b.classList.remove('on'), 4200);
 }
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const safeCol = c => /^#[0-9a-f]{6}$/i.test(c) ? c : '#888888';
 
 // ---------- menu ----------
 $('nameIn').value = prof.name;
@@ -76,7 +81,7 @@ $('hairBtn').onclick = () => { prof.hair = (prof.hair + 1) % 4; if (prof.hair ==
 const params = new URLSearchParams(location.search);
 if (params.get('room')) { $('codeIn').value = params.get('room').toUpperCase().slice(0, 4); $('joinBtn').classList.add('glow'); }
 
-document.addEventListener('click', e => { if (e.target.closest('button')) { A.audioInit(); } }, true);
+document.addEventListener('click', e => { if (e.target.closest('button')) A.audioInit(); }, true);
 
 $('soloBtn').onclick = () => {
   role = 'solo'; myId = 'h'; roster = [meInfo('h')];
@@ -124,7 +129,11 @@ function leaveAll() {
 }
 
 // ---------- lobby ----------
+$('mapSel').innerHTML = '<option value="random">Случайная</option>' + Object.entries(MAP_TYPES).map(([k, n]) => `<option value="${k}">${n}</option>`).join('');
+$('modeSel').innerHTML = Object.entries(MODES).map(([k, m]) => `<option value="${k}">${m.name}</option>`).join('');
 $('modeSel').onchange = e => { settings.mode = e.target.value; renderLobby(); pushLobby(); };
+$('mapSel').onchange = e => { settings.map = e.target.value; renderLobby(); pushLobby(); };
+$('hwIn').onchange = e => { settings.theme = e.target.checked ? 'halloween' : ''; A.setTheme(settings.theme); renderLobby(); pushLobby(); };
 $('botsIn').oninput = e => { settings.bots = +e.target.value; renderLobby(); pushLobby(); };
 $('durSel').onchange = e => { settings.dur = +e.target.value; pushLobby(); };
 $('startBtn').onclick = () => startMatch();
@@ -142,29 +151,33 @@ function lobbyData() { return { t: 'lobby', roster: roster.map(({ id, name, colo
 function pushLobby() { if (role === 'host') broadcast(lobbyData()); }
 
 function renderLobby(data) {
-  const d = data || lobbyData();
+  const d = data || lobbyData(), s = d.settings;
   const isHost = role === 'host' || role === 'solo';
+  document.body.classList.toggle('hw', s.theme === 'halloween');
+  A.setTheme(s.theme);
   $('roomBox').classList.toggle('hidden', role === 'solo' || role === 'client');
   $('lobbyTitle').textContent = role === 'solo' ? 'Игра с ботами' : role === 'client' ? 'Комната' : 'Твоя комната';
   $('hostOpts').classList.toggle('hidden', !isHost);
   $('waitMsg').classList.toggle('hidden', isHost);
   $('modeSel').value = settings.mode; $('botsIn').value = settings.bots; $('durSel').value = settings.dur;
+  $('mapSel').value = settings.map; $('hwIn').checked = settings.theme === 'halloween';
+  $('mapSel').disabled = settings.mode === 'bomber';
   $('botsVal').textContent = settings.bots;
-  $('modeDesc').textContent = MODES[d.settings.mode].desc;
-  $('clientMode').textContent = `${MODES[d.settings.mode].name} · ${d.settings.dur / 60} мин · ботов: ${d.settings.bots}`;
+  $('modeDesc').textContent = MODES[s.mode].desc + (s.mode === 'bomber' ? ' Карта — арена с ящиками.' : '');
+  const mapName = s.mode === 'bomber' ? 'Арена' : MAP_TYPES[s.map] || 'случайная карта';
+  $('clientMode').textContent = `${MODES[s.mode].name} · ${mapName} · ${s.dur / 60} мин · ботов: ${s.bots}${s.theme ? ' · 🎃' : ''}`;
   $('clientMode').classList.toggle('hidden', isHost);
   const list = $('roster');
   list.innerHTML = '';
   for (const r of d.roster) {
     const li = document.createElement('div');
     li.className = 'pl';
-    li.innerHTML = `<i style="background:${r.color}"></i><span>${esc(r.name)}${r.id === myId ? ' (ты)' : ''}${r.id === 'h' ? ' ★' : ''}</span>`;
+    li.innerHTML = `<i style="background:${safeCol(r.color)}"></i><span>${esc(r.name)}${r.id === myId ? ' (ты)' : ''}${r.id === 'h' ? ' ★' : ''}</span>`;
     list.appendChild(li);
   }
-  const nb = Math.max(0, Math.min(MAX_PLAYERS - d.roster.length, d.settings.bots));
+  const nb = Math.max(0, Math.min(MAX_PLAYERS - d.roster.length, s.bots));
   if (nb) { const li = document.createElement('div'); li.className = 'pl bot'; li.innerHTML = `<i></i><span>+ ботов: ${nb}</span>`; list.appendChild(li); }
 }
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ---------- host networking ----------
 function broadcast(msg) { for (const { conn } of conns.values()) if (conn.open) try { conn.send(msg); } catch (e) { } }
@@ -181,6 +194,7 @@ function setupHostConn(conn) {
   });
 }
 function rosterInfo() { return sim.players.map(({ id, name, color, hair, hairCol, bot }) => ({ id, name, color, hair, hairCol, bot })); }
+function startMsg() { return { t: 'start', seed: sim.seed, mode: sim.mode, dur: sim.dur, mapType: sim.mapType, theme: sim.theme, roster: rosterInfo() }; }
 
 function onHostMsg(conn, m) {
   if (!m || typeof m !== 'object') return;
@@ -195,7 +209,7 @@ function onHostMsg(conn, m) {
     A.sfx('pick');
     if (sim && sim.phase !== 'end') {
       sim.addPlayer(info);
-      conn.send({ t: 'start', seed: sim.seed, mode: sim.mode, dur: sim.dur, roster: rosterInfo() });
+      conn.send(startMsg());
       broadcast({ t: 'roster', roster: rosterInfo() });
     } else { renderLobby(); pushLobby(); }
     return;
@@ -205,12 +219,13 @@ function onHostMsg(conn, m) {
   const p = sim.byId(info.id);
   if (!p) return;
   if (m.t === 'in') {
-    if (m.tp === p.tp && p.alive && sim.phase === 'play' && Number.isFinite(m.x) && Number.isFinite(m.y)) {
+    if (m.tp === p.tp && (p.alive || p.ghost) && sim.phase === 'play' && Number.isFinite(m.x) && Number.isFinite(m.y)) {
       if (Math.hypot(m.x - p.x, m.y - p.y) < 120) { p.x = m.x; p.y = m.y; } else p.tp++;
       if (Number.isFinite(m.dx)) { p.fdx = m.dx; p.fdy = m.dy; }
       p.m = m.m ? 1 : 0;
     }
     if (m.u > p.useSeq) { p.useSeq = m.u; sim.useRune(p); }
+    if (m.bs > p.bombSeq) { p.bombSeq = m.bs; sim.placeBomb(p); }
   }
 }
 
@@ -220,21 +235,25 @@ function startMatch() {
   roster.forEach(r => { if (r.id === myId) Object.assign(r, meInfo(myId)); });
   const total = Math.min(MAX_PLAYERS, roster.length + settings.bots);
   if (total < 2) return toast('Нужен хотя бы один бот или друг');
-  const names = BOT_NAMES.filter(n => !roster.some(r => r.name === n)).sort(() => Math.random() - 0.5);
+  const pool = settings.theme === 'halloween' ? BOT_NAMES_HW : BOT_NAMES;
+  const names = pool.filter(n => !roster.some(r => r.name === n)).sort(() => Math.random() - 0.5);
   const bots = [];
   for (let i = roster.length; i < total; i++)
     bots.push({ id: 'b' + i, name: names.pop() || 'Бот' + i, color: COLORS[(i * 3 + 1) % COLORS.length], hair: i % 4, hairCol: HAIRCOLS[i % HAIRCOLS.length], bot: true });
   const seed = Math.floor(Math.random() * 1e9);
-  sim = new Sim({ ...settings, storyteller: pick(STORYTELLERS) }, [...roster, ...bots], seed, myId);
+  sim = new Sim({ ...settings, mapType: pickMapType(settings.mode, settings.map), storyteller: pick(STORYTELLERS) }, [...roster, ...bots], seed, myId);
   pendingFx = []; results = null;
   R.setMap(sim.map, seed);
-  broadcast({ t: 'start', seed, mode: sim.mode, dur: sim.dur, roster: rosterInfo() });
-  enterGame();
+  broadcast(startMsg());
+  enterGame(sim.mode, sim.theme);
 }
-function enterGame() {
+function enterGame(mode, theme) {
   show('game');
   results = null; lastRune = undefined; lastTick = -1;
-  A.setMusic('game');
+  A.setTheme(theme); A.setMusic('game');
+  document.body.classList.toggle('hw', theme === 'halloween');
+  $('bombBtn').classList.toggle('hidden', mode !== 'bomber');
+  $('keysHint').textContent = mode === 'bomber' ? 'WASD — бег · ПРОБЕЛ — бомба · E — руна' : 'WASD — бег · ПРОБЕЛ / E — руна';
 }
 
 // ---------- client networking ----------
@@ -250,9 +269,9 @@ function onClientMsg(m) {
       renderLobby(m); show('lobby');
       break;
     case 'start':
-      cl = { map: genMap(m.seed), mode: m.mode, dur: m.dur, roster: new Map(m.roster.map(r => [r.id, r])), snaps: [], latest: null, own: null, useSeq: 0, useAt: 0, lastSend: 0, localFx: {} };
+      cl = { map: genMap(m.seed, m.mapType, m.theme), mode: m.mode, dur: m.dur, roster: new Map(m.roster.map(r => [r.id, r])), snaps: [], latest: null, own: null, useSeq: 0, bombSeq: 0, useAt: 0, lastSend: 0, localFx: {}, broken: 0 };
       R.setMap(cl.map, m.seed);
-      enterGame();
+      enterGame(m.mode, m.theme);
       break;
     case 'roster': if (cl) cl.roster = new Map(m.roster.map(r => [r.id, r])); break;
     case 's': onSnap(m); break;
@@ -267,13 +286,15 @@ function onSnap(m) {
   cl.latest = m;
   cl.map.dyn.clear();
   for (const i of m.w) cl.map.dyn.set(i, 1);
+  if (m.cb) { for (let k = cl.broken; k < m.cb.length; k++) cl.map.crates.delete(m.cb[k]); cl.broken = m.cb.length; }
   for (const f of m.fx || []) handleFx(f);
   const q = m.p.find(z => z.i === myId);
   if (!q) return;
   if (!cl.own) cl.own = { id: myId, x: q.x, y: q.y, vx: 0, vy: 0, fdx: q.dx, fdy: q.dy, m: 0, tp: q.tp, fx: {} };
   const o = cl.own;
   if (q.tp !== o.tp) { o.x = q.x; o.y = q.y; o.vx = o.vy = 0; o.tp = q.tp; }
-  o.it = !!q.it; o.alive = !!q.a; o.score = q.s; o.sfx = q.f || {};
+  o.it = !!q.it; o.alive = !!q.a; o.ghost = !!q.g; o.score = q.s; o.sfx = q.f || {};
+  o.lives = q.l; o.boots = q.bo || 0; o.pw = q.pw;
   if (now - cl.useAt > 450) o.rune = q.r;
 }
 
@@ -294,18 +315,22 @@ function handleFx(f) {
       break;
     }
     case 'pick':
-      R.burst(f.x, f.y - 4, RUNES[f.r].col, 10, 40);
-      if (mine) { A.sfx('pick'); R.text(f.x, f.y - 16, RUNES[f.r].name, RUNES[f.r].col); vib(30); }
+      R.burst(f.x, f.y - 4, RUNES[f.r].col, f.r === 'gold' ? 30 : 10, 40);
+      if (mine) { A.sfx('pick'); R.text(f.x, f.y - 16, RUNES[f.r].name, RUNES[f.r].col); vib(30); if (f.r === 'gold') center('ЗОЛОТАЯ РУНА!', '#ffcc33'); }
+      break;
+    case 'item':
+      R.burst(f.x, f.y - 4, ITEMS[f.r].col, 10, 40);
+      if (mine) { A.sfx('item'); R.text(f.x, f.y - 16, ITEMS[f.r].name, ITEMS[f.r].col); vib(30); }
       break;
     case 'use': {
       const col = RUNES[f.r].col;
-      if (f.r === 'trap' && !mine) break;
+      if ((f.r === 'trap' || f.r === 'slime') && !mine) break;
       if (mine) R.text(f.x, f.y - 24, RUNES[f.r].name + '!', col);
-      if (f.r === 'blink') { R.burst(f.x, f.y - 6, col, 14, 50); R.burst(f.x2, f.y2 - 6, '#d9b8ff', 14, 50); A.sfx('blink', vol); }
-      else if (f.r === 'shock') { R.ring(f.x, f.y - 4, col, 54); R.burst(f.x, f.y - 6, '#bfe0ff', 20, 90); A.sfx('shock', vol); if (vol > 0.6) R.shake = 0.6; }
+      if (f.r === 'blink' || f.r === 'rewind') { R.burst(f.x, f.y - 6, col, 14, 50); R.burst(f.x2, f.y2 - 6, '#d9b8ff', 14, 50); A.sfx('blink', vol); }
+      else if (f.r === 'shock' || f.r === 'gust') { R.ring(f.x, f.y - 4, col, f.r === 'gust' ? 64 : 54); R.burst(f.x, f.y - 6, col, 20, 90); A.sfx('shock', vol); if (vol > 0.6) R.shake = 0.6; }
       else if (f.r === 'wall') { R.burst(f.x, f.y, '#a8733e', 14, 50); A.sfx('wall', vol); }
-      else if (f.r === 'swap') { }
-      else { R.burst(f.x, f.y - 6, col, 14, 45); A.sfx('use', vol); }
+      else if (f.r === 'blind') { A.sfx('boo', 0.6); if (!mine) center('ТЬМА!', '#a07ac8'); }
+      else if (f.r !== 'swap') { R.burst(f.x, f.y - 6, col, 14, 45); A.sfx('use', vol); }
       break;
     }
     case 'swap':
@@ -316,14 +341,31 @@ function handleFx(f) {
     case 'portal': R.burst(f.x, f.y - 6, '#b07cff', 12, 40); R.burst(f.x2, f.y2 - 6, '#b07cff', 12, 40); A.sfx('portal', mine ? 1 : vol); break;
     case 'fool': R.burst(f.x, f.y - 6, '#ff9ad5', 20, 60); R.text(f.x, f.y - 22, 'ОБМАНКА!', '#ff9ad5'); A.sfx('fool', vol); break;
     case 'poof': R.burst(f.x, f.y - 6, '#cccccc', 10, 30); break;
+    case 'boo': R.burst(f.x, f.y - 10, '#e8eef8', 12, 30); R.text(f.x, f.y - 24, 'БУ!', '#e8eef8'); A.sfx('boo', vol); if (mine) vib(80); break;
     case 'boom':
       R.burst(f.x, f.y - 6, '#ffb03b', 40, 120, 0.9, 2); R.burst(f.x, f.y - 6, '#ff4a3b', 25, 80); R.burst(f.x, f.y - 6, '#555', 20, 50, 1.2, 2);
-      R.ring(f.x, f.y - 4, '#ffd23f', 40); R.text(f.x, f.y - 26, 'БУМ!', '#ffb03b');
+      R.ring(f.x, f.y - 4, '#ffd23f', 40); R.text(f.x, f.y - 26, view && view.mode === 'bomber' ? 'ВЫБЫЛ!' : 'БУМ!', '#ffb03b');
       A.sfx('boom', Math.max(vol, 0.4)); R.shake = Math.max(R.shake, vol * 1.3);
-      if (mine) { center('ТЫ ВЗОРВАН!', '#ff6b3b'); vib(400); }
+      if (mine) { center(view && view.mode === 'bomber' ? 'ТЫ ВЫБЫЛ — ТЕПЕРЬ ТЫ ПРИЗРАК' : 'ТЫ ВЗОРВАН! ТЕПЕРЬ ТЫ ПРИЗРАК', '#ff6b3b'); vib(400); }
       break;
     case 'newbomb': R.text(f.x, f.y - 26, 'БОМБА!', '#ffd23f'); if (mine) { center('БОМБА У ТЕБЯ!', '#ffd23f'); A.sfx('itme'); vib(150); } break;
-    case 'event': banner(EVENTS[f.e], f.s); A.sfx('event'); break;
+    case 'bombset': A.sfx('bombset', vol); break;
+    case 'blast':
+      R.blast(f.tl); R.burst(f.x, f.y, '#ffb03b', 16, 80, 0.5, 2); A.sfx('blast', Math.max(vol, 0.25));
+      if (vol > 0.5) R.shake = Math.max(R.shake, 0.5 * vol);
+      break;
+    case 'hit':
+      R.burst(f.x, f.y - 6, '#ff4a3b', 20, 70); R.text(f.x, f.y - 26, '−♥', '#ff4a3b'); A.sfx('hit', Math.max(vol, 0.4));
+      if (mine) { center('−1 ЖИЗНЬ', '#ff6b5b'); vib(200); R.shake = 1; }
+      else if (f.by === myId) R.text(f.x, f.y - 34, 'ПОПАЛ!', '#ffd86b');
+      break;
+    case 'impact': R.burst(f.x, f.y, f.h ? '#d9772e' : '#9a7a5a', 22, 80, 0.6, 2); R.ring(f.x, f.y, '#ffb03b', 20); A.sfx('impact', vol); if (vol > 0.7) R.shake = 0.5; break;
+    case 'sudden': banner('ВНЕЗАПНАЯ СМЕРТЬ', 'Арена сжимается! Держись подальше от краёв.', ''); A.sfx('sudden'); break;
+    case 'event': {
+      const e = EVENTS[f.e];
+      banner(f.h && e.hw ? e.hw : e.name, e.text, f.s); A.sfx(f.e === 'spirits' ? 'boo' : 'event');
+      break;
+    }
     case 'count': center(String(f.n)); A.sfx('count'); break;
     case 'go': center('БЕГИ!', '#7dff8a'); A.sfx('go'); break;
     case 'end': center('ВРЕМЯ!', '#ffd86b'); A.sfx('end'); A.setMusic('menu'); break;
@@ -339,7 +381,7 @@ function showResults(res) {
   res.rows.forEach((r, i) => {
     const li = document.createElement('li');
     li.className = r.win ? 'win' : '';
-    li.innerHTML = `<b>${r.win ? '🏆' : i + 1 + '.'}</b><i style="background:${r.color}"></i><span>${esc(r.name)}${r.id === myId ? ' (ты)' : ''}</span><em>${esc(r.label)}</em>`;
+    li.innerHTML = `<b>${r.win ? '🏆' : i + 1 + '.'}</b><i style="background:${safeCol(r.color)}"></i><span>${esc(r.name)}${r.id === myId ? ' (ты)' : ''}</span><em>${esc(r.label)}</em>`;
     list.appendChild(li);
   });
   const isHost = role === 'host' || role === 'solo';
@@ -352,6 +394,7 @@ $('toLobbyBtn').onclick = () => { sim = null; results = null; renderLobby(); sho
 
 // ---------- HUD ----------
 $('runeBtn').addEventListener('pointerdown', e => { e.preventDefault(); A.audioInit(); if (input.enabled) input.useQ++; });
+$('bombBtn').addEventListener('pointerdown', e => { e.preventDefault(); A.audioInit(); if (input.enabled) input.actQ++; });
 $('muteBtn').onclick = () => { $('muteBtn').classList.toggle('off', A.toggleMute()); };
 $('muteBtn').classList.toggle('off', A.isMuted());
 let exitArm = 0;
@@ -377,8 +420,9 @@ function updateHud(v, dt) {
   if (hudT > 0) return;
   hudT = 0.1;
   const tm = $('timer');
-  tm.textContent = v.phase === 'count' ? fmtT(v.time) : fmtT(v.time);
-  tm.classList.toggle('hurry', v.phase === 'play' && v.time < 30);
+  tm.textContent = fmtT(v.time);
+  const bomber = v.mode === 'bomber';
+  tm.classList.toggle('hurry', v.phase === 'play' && v.time < (bomber ? SUDDEN : 30));
   if (v.phase === 'play') {
     const sec = Math.ceil(v.time);
     if (sec <= 10 && sec !== lastTick && sec > 0) { lastTick = sec; A.sfx('tick'); }
@@ -390,15 +434,20 @@ function updateHud(v, dt) {
   const itName = meIt ? '<b style="color:#ff6b5b">ТЫ!</b>' : its.length ? `<b style="color:#ff8a7a">${esc(its[0].name)}</b>` : '';
   if (v.mode === 'classic') sub = `Квач: ${itName}`;
   else if (v.mode === 'bomb') sub = `💣 ${Math.max(0, v.fuse).toFixed(1)}<br>${itName}`;
+  else if (bomber) sub = me && me.alive && me.pw ? `💣${me.pw[0]} 🔥${me.pw[1]} 👟${me.boots || 0}` : '';
   else sub = `Живых: <b>${v.players.filter(p => p.alive && !p.it).length}</b>/${v.players.length}`;
-  if (me && !me.alive) sub += '<br>ты выбыл';
+  if (me && !me.alive) sub += '<br>👻 ты призрак';
   $('sub').innerHTML = sub;
   const rows = v.players.slice();
   if (v.mode === 'classic') rows.sort((a, b) => a.score - b.score);
+  else if (bomber) rows.sort((a, b) => (b.alive - a.alive) || ((b.lives || 0) - (a.lives || 0)) || (b.score - a.score));
   else rows.sort((a, b) => (b.alive - a.alive) || (a.it - b.it) || (b.score - a.score));
   $('board').innerHTML = rows.map(p => {
-    const val = v.mode === 'classic' ? p.score.toFixed(0) + 'с' : !p.alive ? '✝' : p.it ? (v.mode === 'bomb' ? '💣' : '🧟') : p.score.toFixed(0) + 'с';
-    return `<div class="${p.id === myId ? 'me' : ''}${p.it ? ' it' : ''}${!p.alive ? ' dead' : ''}"><i style="background:${p.color}"></i><span>${esc(p.name)}</span><em>${val}</em></div>`;
+    const val = v.mode === 'classic' ? p.score.toFixed(0) + 'с'
+      : !p.alive ? '👻'
+      : bomber ? `${'♥'.repeat(Math.max(0, p.lives || 0))}`
+      : p.it ? (v.mode === 'bomb' ? '💣' : '🧟') : p.score.toFixed(0) + 'с';
+    return `<div class="${p.id === myId ? 'me' : ''}${p.it ? ' it' : ''}${!p.alive ? ' dead' : ''}"><i style="background:${safeCol(p.color)}"></i><span>${esc(p.name)}</span><em>${val}</em></div>`;
   }).join('');
   R.drawMini($('mini'), v);
 }
@@ -406,13 +455,14 @@ function updateHud(v, dt) {
 // ---------- views ----------
 function decoyView(d, owner) {
   owner = owner || {};
-  return { id: 'd' + d.id, x: d.x, y: d.y, fdx: d.fdx, fdy: d.fdy, m: 1, fx: {}, name: owner.name, color: owner.color || '#888', hair: owner.hair, hairCol: owner.hairCol, alive: true, it: false, decoy: true, seed: d.id };
+  return { id: 'd' + d.id, x: d.x, y: d.y, fdx: d.fdx, fdy: d.fdy, m: 1, fx: {}, name: owner.name, color: owner.color || '#888888', hair: owner.hair, hairCol: owner.hairCol, alive: true, it: false, decoy: true, seed: d.id };
 }
 function hostView() {
   return {
-    map: sim.map, players: sim.players, runes: sim.runes,
+    map: sim.map, players: sim.players, runes: sim.runes, items: sim.items, bombs: sim.bombs,
     traps: sim.traps.map(t => ({ x: t.x, y: t.y, owner: t.owner, armed: t.arm <= 0 })),
     decoys: sim.decoys.map(d => decoyView(d, sim.byId(d.owner))),
+    puddles: sim.puddles, meteors: sim.meteors, spirits: sim.spirits, sd: sim.sdN || 0,
     walls: [...sim.map.dyn.keys()], event: sim.event && sim.event.k,
     time: sim.time, phase: sim.phase, fuse: sim.fuse, mode: sim.mode, me: myId,
   };
@@ -423,31 +473,37 @@ function clientView(now) {
   for (let i = cl.snaps.length - 1; i >= 0; i--) if (cl.snaps[i].t <= rt) { a = cl.snaps[i]; b = cl.snaps[i + 1] || null; break; }
   const k = b ? Math.max(0, Math.min(1, (rt - a.t) / (b.t - a.t))) : 0;
   const lerpPos = (id, list, idx) => {
-    const qa = a.d[list].find(z => (z.i ?? z[0]) === id), qb = b ? b.d[list].find(z => (z.i ?? z[0]) === id) : null;
+    const la = a.d[list] || [], lb = b ? b.d[list] || [] : [];
+    const qa = la.find(z => (z.i ?? z[0]) === id), qb = lb.find(z => (z.i ?? z[0]) === id);
     const X = q => q.x ?? q[idx], Y = q => q.y ?? q[idx + 1];
     if (!qa) return null;
     if (!qb || (qa.tp !== undefined && qa.tp !== qb.tp)) return [X(qb || qa), Y(qb || qa), qb || qa];
     return [X(qa) + (X(qb) - X(qa)) * k, Y(qa) + (Y(qb) - Y(qa)) * k, qb];
   };
   const players = L.p.map(q => {
-    const info = cl.roster.get(q.i) || { name: '?', color: '#888' };
+    const info = cl.roster.get(q.i) || { name: '?', color: '#888888' };
     if (q.i === myId && cl.own) {
       const o = cl.own;
-      return { ...info, id: q.i, x: o.x, y: o.y, fdx: o.fdx, fdy: o.fdy, m: o.m, it: o.it, alive: o.alive, score: o.score, rune: o.rune, fx: o.fx };
+      return { ...info, id: q.i, x: o.x, y: o.y, fdx: o.fdx, fdy: o.fdy, m: o.m, it: o.it, alive: o.alive, ghost: o.ghost, score: o.score, rune: o.rune, fx: o.fx, lives: o.lives, boots: o.boots, pw: o.pw };
     }
     const lp = lerpPos(q.i, 'p', 0);
     const src = lp ? lp[2] : q;
-    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, score: q.s, rune: q.r, fx: q.f || {}, seed: q.i.length };
+    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, ghost: !!q.g, score: q.s, rune: q.r, fx: q.f || {}, lives: q.l, seed: q.i.length };
   });
   const decoys = L.de.map(d => {
     const lp = lerpPos(d[0], 'de', 1);
-    const dv = { id: d[0], x: lp ? lp[0] : d[1], y: lp ? lp[1] : d[2], fdx: d[3], fdy: d[4], owner: d[5] };
-    return decoyView(dv, cl.roster.get(d[5]));
+    return decoyView({ id: d[0], x: lp ? lp[0] : d[1], y: lp ? lp[1] : d[2], fdx: d[3], fdy: d[4] }, cl.roster.get(d[5]));
   });
+  const spirits = (L.sp || []).map(s => { const lp = lerpPos(s[0], 'sp', 1); return { id: s[0], x: lp ? lp[0] : s[1], y: lp ? lp[1] : s[2] }; });
   return {
-    map: cl.map, players, decoys,
+    map: cl.map, players, decoys, spirits,
     runes: L.ru.map(r => ({ id: r[0], x: r[1], y: r[2], k: r[3] })),
     traps: L.tr.map(t => ({ x: t[1], y: t[2], owner: t[3], armed: !!t[4] })),
+    puddles: (L.pu || []).map(p => ({ x: p[1], y: p[2] })),
+    meteors: (L.mt || []).map(m => ({ x: m[1], y: m[2], t: m[3] })),
+    bombs: (L.bm || []).map(b2 => ({ id: b2[0], x: b2[1], y: b2[2], t: b2[3] })),
+    items: (L.im || []).map(it => ({ id: it[0], x: it[1], y: it[2], k: it[3] })),
+    sd: L.sd || 0,
     walls: L.w, event: L.ev && L.ev.k, time: L.tm, phase: L.ph, fuse: L.fu, mode: cl.mode, me: myId,
   };
 }
@@ -455,12 +511,21 @@ function clientView(now) {
 // ---------- main loop ----------
 let last = performance.now();
 const prevCtx = $('preview').getContext('2d');
+function localMove(ev) {
+  const mv = readMove();
+  return ev === 'mirror' ? { x: -mv.x, y: -mv.y } : mv;
+}
 function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   if (sim) {
-    const mp = sim.byId(myId), mv = readMove();
-    if (mp) { mp.ax = mv.x; mp.ay = mv.y; while (input.useQ > 0) { input.useQ--; sim.useRune(mp); } }
+    const mp = sim.byId(myId), mv = localMove(sim.event && sim.event.k);
+    const bomber = sim.mode === 'bomber';
+    if (mp) {
+      mp.ax = mv.x; mp.ay = mv.y;
+      while (input.useQ > 0) { input.useQ--; sim.useRune(mp); }
+      while (input.actQ > 0) { input.actQ--; if (bomber) sim.placeBomb(mp); else sim.useRune(mp); }
+    }
     sim.update(dt);
     for (const f of sim.fxq) { handleFx(f); if (role === 'host') pendingFx.push(f); }
     sim.fxq.length = 0;
@@ -485,21 +550,26 @@ function tick(now) {
       o.fx = fx;
       const ev = L.ev && L.ev.k;
       if (L.ph === 'play' && o.alive) {
-        const mv = readMove();
+        const mv = localMove(ev);
         moveBody(cl.map, o, mv.x, mv.y, dt, speedMult(o, cl.mode, ev, false), slippery(cl.map, o, ev));
+      } else if (L.ph === 'play' && o.ghost) {
+        const mv = localMove(ev);
+        moveBody(cl.map, o, mv.x, mv.y, dt, 0.9, false, true);
       } else { o.m = 0; o.vx = o.vy = 0; }
-      while (input.useQ > 0) {
-        input.useQ--;
+      const tryRune = () => {
         if (o.rune && L.ph === 'play' && o.alive) {
           cl.useSeq++; cl.useAt = now;
           if (o.rune === 'dash') cl.localFx.dash = 0.3;
           if (o.rune === 'haste') cl.localFx.haste = 4;
+          if (o.rune === 'phase') cl.localFx.phase = 3;
           o.rune = null;
         }
-      }
+      };
+      while (input.useQ > 0) { input.useQ--; tryRune(); }
+      while (input.actQ > 0) { input.actQ--; if (cl.mode === 'bomber') { if (o.alive) cl.bombSeq++; } else tryRune(); }
       if (now - cl.lastSend >= 33) {
         cl.lastSend = now;
-        send({ t: 'in', x: r1(o.x), y: r1(o.y), dx: r2(o.fdx), dy: r2(o.fdy), m: o.m, u: cl.useSeq, tp: o.tp });
+        send({ t: 'in', x: r1(o.x), y: r1(o.y), dx: r2(o.fdx), dy: r2(o.fdy), m: o.m, u: cl.useSeq, bs: cl.bombSeq, tp: o.tp });
       }
     }
     view = clientView(now);
@@ -516,8 +586,8 @@ function tick(now) {
       g.fillStyle = '#16181b'; g.fillRect(0, 0, canvas.width, canvas.height);
     }
     if (!$('menu').classList.contains('hidden')) {
-      prevCtx.clearRect(0, 0, 24, 26);
-      drawPawn(prevCtx, 12, 23, { color: prof.color, hair: prof.hair, hairCol: prof.hairCol, fdx: 0, fdy: 1, m: 1 }, now / 1000);
+      prevCtx.clearRect(0, 0, 24, 30);
+      drawPawn(prevCtx, 12, 27, { id: 'me', color: prof.color, hair: prof.hair, hairCol: prof.hairCol, fdx: 0, fdy: 1, m: 1, hat: settings.theme === 'halloween' ? 1 : 0 }, now / 1000);
     }
   }
 }
@@ -529,8 +599,11 @@ setInterval(() => { if (document.hidden && sim && role === 'host') tick(performa
 $('helpRunes').innerHTML = Object.entries(RUNES).map(([k, r]) => `<li><canvas data-r="${k}"></canvas><b style="color:${r.col}">${r.name}</b> — ${r.desc}</li>`).join('');
 for (const c of document.querySelectorAll('#helpRunes canvas')) drawRuneIcon(c, c.dataset.r);
 $('helpModes').innerHTML = Object.values(MODES).map(m => `<li><b>${m.name}</b> — ${m.desc}</li>`).join('');
-$('helpEvents').innerHTML = Object.values(EVENTS).map(e => `<li><b>${e.name}</b> — ${e.text}</li>`).join('');
+$('helpEvents').innerHTML = Object.values(EVENTS).map(e => `<li><b>${e.name}</b> — ${e.text}${e.theme ? ' <i>(Хэллоуин)</i>' : ''}</li>`).join('');
+$('helpMaps').innerHTML = Object.values(MAP_TYPES).map(n => `<b>${n}</b>`).join(' · ');
 
+document.body.classList.toggle('hw', settings.theme === 'halloween');
+A.setTheme(settings.theme);
 addEventListener('resize', () => R.resize());
 R.resize();
 initInput(canvas, () => A.audioInit());

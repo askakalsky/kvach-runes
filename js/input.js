@@ -1,5 +1,6 @@
 // Keyboard + floating touch joystick.
-export const input = { useQ: 0, enabled: false };
+// useQ: rune key presses (E / Shift / Q); actQ: action key presses (Space / J / Enter)
+export const input = { useQ: 0, actQ: 0, enabled: false };
 export const joy = { active: false, id: null, ox: 0, oy: 0, kx: 0, ky: 0 };
 const keys = new Set();
 const JR = 56;
@@ -9,7 +10,10 @@ export function initInput(canvas, onFirst) {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
     onFirst();
     keys.add(e.code);
-    if (['Space', 'KeyE', 'KeyJ', 'ShiftLeft', 'ShiftRight', 'Enter'].includes(e.code) && !e.repeat && input.enabled) input.useQ++;
+    if (!e.repeat && input.enabled) {
+      if (['KeyE', 'KeyQ', 'ShiftLeft', 'ShiftRight'].includes(e.code)) input.useQ++;
+      if (['Space', 'KeyJ', 'Enter'].includes(e.code)) input.actQ++;
+    }
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
   });
   addEventListener('keyup', e => keys.delete(e.code));

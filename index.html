@@ -26,6 +26,7 @@
   </div>
   <div id="banner"></div>
   <div id="center"></div>
+  <button id="bombBtn" class="hidden"><b>💣</b><span>бомба</span></button>
   <button id="runeBtn"><canvas id="runeIcon" width="11" height="11"></canvas><span id="runeName">нет руны</span></button>
   <div id="keysHint">WASD — бег · ПРОБЕЛ — руна</div>
 </div>
@@ -34,7 +35,7 @@
   <div class="panel">
     <h1>КВАЧ<small>рунные бега</small></h1>
     <div class="who">
-      <canvas id="preview" width="24" height="26"></canvas>
+      <canvas id="preview" width="24" height="30"></canvas>
       <div class="whoR">
         <input id="nameIn" maxlength="12" placeholder="Имя" autocomplete="off">
         <div id="colors"></div>
@@ -58,13 +59,9 @@
     </div>
     <div id="roster"></div>
     <div id="hostOpts">
-      <label>Режим
-        <select id="modeSel">
-          <option value="classic">Классика</option>
-          <option value="bomb">Горячая картошка</option>
-          <option value="infect">Заражение</option>
-        </select>
-      </label>
+      <label>Режим <select id="modeSel"></select></label>
+      <label>Карта <select id="mapSel"></select></label>
+      <label class="chk">Тема <span><input type="checkbox" id="hwIn"> 🎃 Хэллоуин</span></label>
       <label>Боты <input type="range" id="botsIn" min="0" max="7" value="3"><b id="botsVal">3</b></label>
       <label>Время
         <select id="durSel">
@@ -95,8 +92,13 @@
   <div class="panel wide">
     <h2>Как играть</h2>
     <p>Один игрок — <b class="red">квач</b>. Он догоняет, остальные убегают. Коснулся — квачом стал другой. Только что пойманный на секунду оглушён, а прошлый квач секунду неуязвим.</p>
-    <p><b>Телефон:</b> веди пальцем по экрану — появится джойстик. Большая кнопка справа — использовать руну.<br><b>Комп:</b> WASD или стрелки, руна — ПРОБЕЛ / E.</p>
+    <p><b>Телефон:</b> веди пальцем по экрану — появится джойстик. Большая кнопка справа — использовать руну.<br><b>Комп:</b> WASD или стрелки, руна — ПРОБЕЛ / E. В бомбермене: ПРОБЕЛ — бомба, E — руна.</p>
     <h3>Режимы</h3><ul id="helpModes"></ul>
+    <h3>Бомбермен</h3>
+    <p>Бомба взрывается крестом через 2 с. Из ящиков выпадают усилители: <b>🔥 огонь</b> (дальше взрыв), <b>💣 бомба</b> (+1 одновременно), <b>👟 сапоги</b> (быстрее). Бомбы цепляют друг друга. За 50 с до конца — <b>внезапная смерть</b>: арена сжимается.</p>
+    <h3>Призраки</h3>
+    <p>Выбывшие не скучают: они становятся призраками, летают сквозь стены и пугают живых — те замедляются.</p>
+    <h3>Карты</h3><p id="helpMaps"></p>
     <h3>Руны</h3><p>Светящиеся камни. Подбери, держи одну, используй в нужный момент.</p><ul id="helpRunes" class="runes"></ul>
     <h3>Рассказчик</h3><p>Как в RimWorld: каждые ~40 секунд рассказчик устраивает событие.</p><ul id="helpEvents"></ul>
     <h3>Карта</h3>
