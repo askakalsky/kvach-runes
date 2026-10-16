@@ -8,6 +8,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); c
 body { touch-action: none; user-select: none; -webkit-user-select: none; overscroll-behavior: none; }
 #game { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; image-rendering: pixelated; }
 .hidden { display: none !important; }
+#game3d { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: none; pointer-events: none; image-rendering: pixelated; }
+body.v3d #game3d { display: block; }
+#viewBtn { font-size: 9px !important; color: var(--acc); }
 button, input, select { font-family: var(--font); font-size: 11px; color: var(--ink); }
 b.red { color: var(--red); }
 

@@ -27,6 +27,29 @@ const cleanSkin = s => ({ hat: HATS[s && s.hat] ? s.hat : 'none', cape: CAPES[s 
 
 const canvas = $('game');
 const R = new Renderer(canvas);
+// optional 3D view: three.js is loaded only when the player switches it on
+let R3 = null, use3d = false, curMap = null, curSeed = 0;
+const FX = () => (use3d && R3 ? R3 : R);
+function setMapAll(map, seed) {
+  R.setMap(map, seed); curMap = map; curSeed = seed;
+  if (R3) R3.setMap(map, seed, R.layers);
+}
+async function setView3d(on) {
+  if (on && !R3) {
+    toast('Загружаю 3D…', 6000);
+    try {
+      const mod = await import('./render3d.js');
+      R3 = new mod.Renderer3D($('game3d'), canvas);
+      R3.resize();
+      if (curMap) R3.setMap(curMap, curSeed, R.layers);
+      toast('3D включено');
+    } catch (e) { console.warn(e); toast('3D не загрузилось: нужен интернет и WebGL'); on = false; }
+  }
+  use3d = on;
+  document.body.classList.toggle('v3d', use3d);
+  $('viewBtn').textContent = use3d ? '2D' : '3D';
+  prof.view = use3d ? '3d' : '2d'; saveProf();
+}
 let role = null, myId = null, peer = null, hostConn = null;
 const conns = new Map();
 let roster = [];
@@ -294,7 +317,7 @@ function startMatch() {
   const humans = roster.map(r => ({ ...r, team: undefined }));
   sim = new Sim({ ...settings, mapType: pickMapType(settings.mode, settings.map), storyteller: pick(STORYTELLERS) }, [...humans, ...bots], seed, myId);
   pendingFx = []; results = null;
-  R.setMap(sim.map, seed);
+  setMapAll(sim.map, seed);
   broadcast(startMsg());
   enterGame(sim.mode, sim.theme);
 }
@@ -322,7 +345,7 @@ function onClientMsg(m) {
       break;
     case 'start':
       cl = { map: genMap(m.seed, m.mapType, m.theme, m.mode), mode: m.mode, dur: m.dur, roster: new Map(m.roster.map(r => [r.id, r])), snaps: [], latest: null, own: null, useSeq: 0, bombSeq: 0, useAt: 0, lastSend: 0, localFx: {}, broken: 0, eaten: 0 };
-      R.setMap(cl.map, m.seed);
+      setMapAll(cl.map, m.seed);
       enterGame(m.mode, m.theme);
       break;
     case 'roster': if (cl) cl.roster = new Map(m.roster.map(r => [r.id, r])); break;
@@ -361,77 +384,77 @@ function handleFx(f) {
   switch (f.k) {
     case 'tag': {
       const col = f.inf ? '#7dff5a' : f.found ? '#ffd23f' : '#ff4a3b';
-      R.burst(f.x, f.y - 6, col, 18, 70);
-      R.text(f.x, f.y - 26, f.inf ? 'ЗАРАЖЁН!' : f.found ? 'НАЙДЕН!' : 'КВАЧ!', col);
+      FX().burst(f.x, f.y - 6, col, 18, 70);
+      FX().text(f.x, f.y - 26, f.inf ? 'ЗАРАЖЁН!' : f.found ? 'НАЙДЕН!' : 'КВАЧ!', col);
       A.sfx('tag', vol);
-      if (f.b === myId) { center(f.inf ? 'ТЫ ЗАРАЖЁН!' : f.found ? 'ТЕБЯ НАШЛИ! ИЩИ ДРУГИХ' : mode === 'bomb' ? 'БОМБА У ТЕБЯ!' : 'ТЫ КВАЧ!', col); A.sfx('itme'); vib(150); R.shake = 1; }
-      else if (f.a === myId) { R.shake = 0.4; if (!f.inf && !f.found) center('ПЕРЕДАЛ!', '#ffd86b'); }
+      if (f.b === myId) { center(f.inf ? 'ТЫ ЗАРАЖЁН!' : f.found ? 'ТЕБЯ НАШЛИ! ИЩИ ДРУГИХ' : mode === 'bomb' ? 'БОМБА У ТЕБЯ!' : 'ТЫ КВАЧ!', col); A.sfx('itme'); vib(150); FX().shake = 1; }
+      else if (f.a === myId) { FX().shake = 0.4; if (!f.inf && !f.found) center('ПЕРЕДАЛ!', '#ffd86b'); }
       break;
     }
     case 'pick':
-      R.burst(f.x, f.y - 4, RUNES[f.r].col, f.r === 'gold' ? 30 : 10, 40);
-      if (mine) { A.sfx('pick'); R.text(f.x, f.y - 16, RUNES[f.r].name, RUNES[f.r].col); vib(30); if (f.r === 'gold') center('ЗОЛОТАЯ РУНА!', '#ffcc33'); }
+      FX().burst(f.x, f.y - 4, RUNES[f.r].col, f.r === 'gold' ? 30 : 10, 40);
+      if (mine) { A.sfx('pick'); FX().text(f.x, f.y - 16, RUNES[f.r].name, RUNES[f.r].col); vib(30); if (f.r === 'gold') center('ЗОЛОТАЯ РУНА!', '#ffcc33'); }
       break;
     case 'item':
-      R.burst(f.x, f.y - 4, ITEMS[f.r].col, 10, 40);
-      if (mine) { A.sfx('item'); R.text(f.x, f.y - 16, ITEMS[f.r].name, ITEMS[f.r].col); vib(30); }
+      FX().burst(f.x, f.y - 4, ITEMS[f.r].col, 10, 40);
+      if (mine) { A.sfx('item'); FX().text(f.x, f.y - 16, ITEMS[f.r].name, ITEMS[f.r].col); vib(30); }
       break;
     case 'gift':
-      R.burst(f.x, f.y - 6, '#ffd23f', 16, 50); R.burst(f.x, f.y - 6, '#ff4a3b', 10, 40);
-      if (mine) { A.sfx('gift'); R.text(f.x, f.y - 18, GIFTS[f.g], f.g === 'coal' ? '#888' : '#ffd23f'); vib(40); }
+      FX().burst(f.x, f.y - 6, '#ffd23f', 16, 50); FX().burst(f.x, f.y - 6, '#ff4a3b', 10, 40);
+      if (mine) { A.sfx('gift'); FX().text(f.x, f.y - 18, GIFTS[f.g], f.g === 'coal' ? '#888' : '#ffd23f'); vib(40); }
       break;
     case 'use': {
       const col = RUNES[f.r].col;
       if ((f.r === 'trap' || f.r === 'slime') && !mine) break;
-      if (mine) R.text(f.x, f.y - 24, RUNES[f.r].name + '!', col);
-      if (f.r === 'blink' || f.r === 'rewind') { R.burst(f.x, f.y - 6, col, 14, 50); R.burst(f.x2, f.y2 - 6, '#d9b8ff', 14, 50); A.sfx('blink', vol); }
-      else if (f.r === 'shock' || f.r === 'gust') { R.ring(f.x, f.y - 4, col, f.r === 'gust' ? 64 : 54); R.burst(f.x, f.y - 6, col, 20, 90); A.sfx('shock', vol); if (vol > 0.6) R.shake = 0.6; }
-      else if (f.r === 'wall') { R.burst(f.x, f.y, '#a8733e', 14, 50); A.sfx('wall', vol); }
+      if (mine) FX().text(f.x, f.y - 24, RUNES[f.r].name + '!', col);
+      if (f.r === 'blink' || f.r === 'rewind') { FX().burst(f.x, f.y - 6, col, 14, 50); FX().burst(f.x2, f.y2 - 6, '#d9b8ff', 14, 50); A.sfx('blink', vol); }
+      else if (f.r === 'shock' || f.r === 'gust') { FX().ring(f.x, f.y - 4, col, f.r === 'gust' ? 64 : 54); FX().burst(f.x, f.y - 6, col, 20, 90); A.sfx('shock', vol); if (vol > 0.6) FX().shake = 0.6; }
+      else if (f.r === 'wall') { FX().burst(f.x, f.y, '#a8733e', 14, 50); A.sfx('wall', vol); }
       else if (f.r === 'blind') { A.sfx('boo', 0.6); if (!mine) center('ТЬМА!', '#a07ac8'); }
-      else if (f.r !== 'swap') { R.burst(f.x, f.y - 6, col, 14, 45); A.sfx('use', vol); }
+      else if (f.r !== 'swap') { FX().burst(f.x, f.y - 6, col, 14, 45); A.sfx('use', vol); }
       break;
     }
     case 'swap':
-      R.burst(f.x, f.y - 6, '#ff6b6b', 16, 50); R.burst(f.x2, f.y2 - 6, '#ff6b6b', 16, 50); A.sfx('blink', Math.max(vol, 0.5));
+      FX().burst(f.x, f.y - 6, '#ff6b6b', 16, 50); FX().burst(f.x2, f.y2 - 6, '#ff6b6b', 16, 50); A.sfx('blink', Math.max(vol, 0.5));
       if (f.b === myId) center('ОБМЕН!', '#ff6b6b');
       break;
-    case 'freeze': R.burst(f.x, f.y - 8, '#bfe9ff', 22, 60); A.sfx('freeze', vol); if (mine) { center('ЗАМЁРЗ!', '#bfe9ff'); vib(100); } break;
-    case 'portal': R.burst(f.x, f.y - 6, '#b07cff', 12, 40); R.burst(f.x2, f.y2 - 6, '#b07cff', 12, 40); A.sfx('portal', mine ? 1 : vol); break;
-    case 'fool': R.burst(f.x, f.y - 6, '#ff9ad5', 20, 60); R.text(f.x, f.y - 22, 'ОБМАНКА!', '#ff9ad5'); A.sfx('fool', vol); break;
-    case 'poof': R.burst(f.x, f.y - 6, '#cccccc', 10, 30); break;
-    case 'boo': R.burst(f.x, f.y - 10, '#e8eef8', 12, 30); R.text(f.x, f.y - 24, 'БУ!', '#e8eef8'); A.sfx('boo', vol); if (mine) vib(80); break;
+    case 'freeze': FX().burst(f.x, f.y - 8, '#bfe9ff', 22, 60); A.sfx('freeze', vol); if (mine) { center('ЗАМЁРЗ!', '#bfe9ff'); vib(100); } break;
+    case 'portal': FX().burst(f.x, f.y - 6, '#b07cff', 12, 40); FX().burst(f.x2, f.y2 - 6, '#b07cff', 12, 40); A.sfx('portal', mine ? 1 : vol); break;
+    case 'fool': FX().burst(f.x, f.y - 6, '#ff9ad5', 20, 60); FX().text(f.x, f.y - 22, 'ОБМАНКА!', '#ff9ad5'); A.sfx('fool', vol); break;
+    case 'poof': FX().burst(f.x, f.y - 6, '#cccccc', 10, 30); break;
+    case 'boo': FX().burst(f.x, f.y - 10, '#e8eef8', 12, 30); FX().text(f.x, f.y - 24, 'БУ!', '#e8eef8'); A.sfx('boo', vol); if (mine) vib(80); break;
     case 'boom':
-      R.burst(f.x, f.y - 6, '#ffb03b', 40, 120, 0.9, 2); R.burst(f.x, f.y - 6, '#ff4a3b', 25, 80); R.burst(f.x, f.y - 6, '#555', 20, 50, 1.2, 2);
-      R.ring(f.x, f.y - 4, '#ffd23f', 40); R.text(f.x, f.y - 26, mode === 'bomb' ? 'БУМ!' : 'ВЫБЫЛ!', '#ffb03b');
-      A.sfx('boom', Math.max(vol, 0.4)); R.shake = Math.max(R.shake, vol * 1.3);
+      FX().burst(f.x, f.y - 6, '#ffb03b', 40, 120, 0.9, 2); FX().burst(f.x, f.y - 6, '#ff4a3b', 25, 80); FX().burst(f.x, f.y - 6, '#555', 20, 50, 1.2, 2);
+      FX().ring(f.x, f.y - 4, '#ffd23f', 40); FX().text(f.x, f.y - 26, mode === 'bomb' ? 'БУМ!' : 'ВЫБЫЛ!', '#ffb03b');
+      A.sfx('boom', Math.max(vol, 0.4)); FX().shake = Math.max(FX().shake, vol * 1.3);
       if (mine) { center('ТЫ ВЫБЫЛ — ТЕПЕРЬ ТЫ ПРИЗРАК', '#ff6b3b'); vib(400); }
       break;
-    case 'newbomb': R.text(f.x, f.y - 26, 'БОМБА!', '#ffd23f'); if (mine) { center('БОМБА У ТЕБЯ!', '#ffd23f'); A.sfx('itme'); vib(150); } break;
+    case 'newbomb': FX().text(f.x, f.y - 26, 'БОМБА!', '#ffd23f'); if (mine) { center('БОМБА У ТЕБЯ!', '#ffd23f'); A.sfx('itme'); vib(150); } break;
     case 'bombset': A.sfx('bombset', vol); break;
     case 'blast':
-      R.blast(f.tl); R.burst(f.x, f.y, '#ffb03b', 16, 80, 0.5, 2); A.sfx('blast', Math.max(vol, 0.25));
-      if (vol > 0.5) R.shake = Math.max(R.shake, 0.5 * vol);
+      FX().blast(f.tl); FX().burst(f.x, f.y, '#ffb03b', 16, 80, 0.5, 2); A.sfx('blast', Math.max(vol, 0.25));
+      if (vol > 0.5) FX().shake = Math.max(FX().shake, 0.5 * vol);
       break;
     case 'hit':
-      R.burst(f.x, f.y - 6, '#ff4a3b', 20, 70); R.text(f.x, f.y - 26, '−♥', '#ff4a3b'); A.sfx('hit', Math.max(vol, 0.4));
-      if (mine) { center('−1 ЖИЗНЬ', '#ff6b5b'); vib(200); R.shake = 1; }
-      else if (f.by === myId) R.text(f.x, f.y - 34, 'ПОПАЛ!', '#ffd86b');
+      FX().burst(f.x, f.y - 6, '#ff4a3b', 20, 70); FX().text(f.x, f.y - 26, '−♥', '#ff4a3b'); A.sfx('hit', Math.max(vol, 0.4));
+      if (mine) { center('−1 ЖИЗНЬ', '#ff6b5b'); vib(200); FX().shake = 1; }
+      else if (f.by === myId) FX().text(f.x, f.y - 34, 'ПОПАЛ!', '#ffd86b');
       break;
-    case 'impact': R.burst(f.x, f.y, f.h ? '#d9772e' : '#9a7a5a', 22, 80, 0.6, 2); R.ring(f.x, f.y, '#ffb03b', 20); A.sfx('impact', vol); if (vol > 0.7) R.shake = 0.5; break;
+    case 'impact': FX().burst(f.x, f.y, f.h ? '#d9772e' : '#9a7a5a', 22, 80, 0.6, 2); FX().ring(f.x, f.y, '#ffb03b', 20); A.sfx('impact', vol); if (vol > 0.7) FX().shake = 0.5; break;
     case 'pel': if (mine) A.sfx('chomp'); break;
-    case 'power': R.ring(f.x, f.y, '#2d5bff', 60); A.sfx('power'); if (mine) center('СУПЕРСИЛА! ЕШЬ МОБОВ!', '#6a8aff'); break;
-    case 'eat': R.burst(f.x, f.y - 6, '#2d5bff', 16, 60); R.text(f.x, f.y - 22, '+10', '#ffd23f'); A.sfx('eat', Math.max(vol, 0.4)); break;
-    case 'flagtake': A.sfx('flagtake', Math.max(vol, 0.5)); R.text(f.x, f.y - 30, 'ФЛАГ!', TEAM_COLS[f.team]); if (mine) center('НЕСИ ФЛАГ ДОМОЙ!', '#ffd23f'); else if (me && me.team === f.team) toast('Ваш флаг украли!'); break;
-    case 'flagback': R.burst(f.x, f.y - 10, TEAM_COLS[f.team], 14, 40); A.sfx('pick', 0.5); break;
+    case 'power': FX().ring(f.x, f.y, '#2d5bff', 60); A.sfx('power'); if (mine) center('СУПЕРСИЛА! ЕШЬ МОБОВ!', '#6a8aff'); break;
+    case 'eat': FX().burst(f.x, f.y - 6, '#2d5bff', 16, 60); FX().text(f.x, f.y - 22, '+10', '#ffd23f'); A.sfx('eat', Math.max(vol, 0.4)); break;
+    case 'flagtake': A.sfx('flagtake', Math.max(vol, 0.5)); FX().text(f.x, f.y - 30, 'ФЛАГ!', TEAM_COLS[f.team]); if (mine) center('НЕСИ ФЛАГ ДОМОЙ!', '#ffd23f'); else if (me && me.team === f.team) toast('Ваш флаг украли!'); break;
+    case 'flagback': FX().burst(f.x, f.y - 10, TEAM_COLS[f.team], 14, 40); A.sfx('pick', 0.5); break;
     case 'capture': {
-      A.sfx('capture'); R.burst(f.x, f.y - 10, '#ffd23f', 40, 90, 1, 2); R.ring(f.x, f.y, TEAM_COLS[f.team], 60);
+      A.sfx('capture'); FX().burst(f.x, f.y - 10, '#ffd23f', 40, 90, 1, 2); FX().ring(f.x, f.y, TEAM_COLS[f.team], 60);
       const us = me && me.team === f.team;
       banner(`${TEAM_NAMES[f.team]} принесли флаг!`, us ? 'Отлично! Ещё немного.' : 'Защищайте базу!', '');
       if (mine) vib(200);
       break;
     }
-    case 'jail': R.burst(f.x, f.y - 6, '#cccccc', 16, 50); R.text(f.x, f.y - 26, 'В ТЮРЬМУ!', '#ff8a7a'); A.sfx('jail', Math.max(vol, 0.4)); if (f.b === myId) { center('ПОЙМАН — НА БАЗУ', '#ff8a7a'); vib(150); } break;
-    case 'shove': A.sfx('shove', vol); R.burst(f.x + 0, f.y - 6, '#ffffff', 6, 40, 0.3); if (f.hit === myId) { vib(80); R.shake = 0.5; } break;
+    case 'jail': FX().burst(f.x, f.y - 6, '#cccccc', 16, 50); FX().text(f.x, f.y - 26, 'В ТЮРЬМУ!', '#ff8a7a'); A.sfx('jail', Math.max(vol, 0.4)); if (f.b === myId) { center('ПОЙМАН — НА БАЗУ', '#ff8a7a'); vib(150); } break;
+    case 'shove': A.sfx('shove', vol); FX().burst(f.x + 0, f.y - 6, '#ffffff', 6, 40, 0.3); if (f.hit === myId) { vib(80); FX().shake = 0.5; } break;
     case 'zone': if (view && view.phase === 'play') { A.sfx('event'); banner('Трон переехал!', 'Беги к новому золотому кругу.', ''); } break;
     case 'seek': A.sfx('seek'); center(me && me.it ? 'ИЩИ!' : 'СВЕТ ПОГАС!', '#ffd23f'); break;
     case 'sudden': banner('ВНЕЗАПНАЯ СМЕРТЬ', 'Арена сжимается! Держись подальше от краёв.', ''); A.sfx('sudden'); break;
@@ -681,7 +704,8 @@ function tick(now) {
 
   if (!document.hidden) {
     if (view && (sim || cl)) {
-      R.draw(view, dt, now / 1000);
+      if (use3d && R3 && R3.map === curMap) R3.draw(view, dt, now / 1000);
+      else R.draw(view, dt, now / 1000);
       R.drawJoystick(joy);
       updateHud(view, dt);
     } else {
@@ -711,7 +735,9 @@ $('helpEvents').innerHTML = Object.values(EVENTS).map(e => `<li><b>${e.name}</b>
 $('helpMaps').innerHTML = Object.values(MAP_TYPES).map(n => `<b>${n}</b>`).join(' · ');
 
 applyTheme(settings.theme);
-addEventListener('resize', () => R.resize());
+addEventListener('resize', () => { R.resize(); if (R3) R3.resize(); });
+$('viewBtn').onclick = () => setView3d(!use3d);
+if (prof.view === '3d') setView3d(true);
 R.resize();
 initInput(canvas, () => A.audioInit());
 show('menu');
