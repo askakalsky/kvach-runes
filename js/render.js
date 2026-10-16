@@ -1,6 +1,6 @@
 // Pixel-art renderer: prerendered map layers, pawns, cosmetics, mode props, particles, lighting.
-import { TS, MW, MH, T, rng, isHideT, arenaSpiral, isWinter } from './map.js';
-import { RUNES, GLYPHS, ITEMS, TEAM_COLS, MOB_COLS } from './sim.js';
+import { TS, MW, MH, T, rng, isHideT, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED } from './map.js';
+import { RUNES, GLYPHS, ITEMS, TEAM_COLS, MOB_COLS, HEROES, EMOTES } from './sim.js';
 import { CAPES } from './skins.js';
 
 const OL = '#1d1712';
@@ -271,7 +271,7 @@ export function buildLayers(map, seed) {
   }
 
   const MC = { [T.GRASS]: pal.grass, [T.DIRT]: pal.dirt || '#7a6040', [T.WALL]: pac ? '#2d5bff' : '#9a958e', [T.WATER]: '#2f5f7c', [T.BUSH]: '#2f5022', [T.ICE]: '#a9d3e3', [T.TREE]: '#2b4220', [T.FLOOR]: '#7d5f3c', [T.PORTAL]: '#b07cff', [T.HEDGE]: '#2e4a22', [T.ROAD]: '#877c68', [T.BRIDGE]: '#8b6a42', [T.TOMB]: '#8a8a92', [T.WHEAT]: '#b8963a', [T.DECOR]: '#d9772e', [T.SAND]: '#d9c48a', [T.MUSH]: pal.grass, [T.STAIRS]: '#8a857e' };
-  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) P(mm, upAt(x, y) ? '#9a7650' : MC[at(x, y)], x, y);
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) P(mm, upAt(x, y) ? '#9a7650' : map.belt[y * MW + x] >= 0 ? '#c9a23a' : MC[at(x, y)], x, y);
   return { ground, over, upper: hasUp ? upper : null, mini, lights };
 }
 
@@ -434,13 +434,13 @@ export class Renderer {
   constructor(canvas) {
     this.c = canvas; this.g = canvas.getContext('2d');
     this.dark = mk(10, 10);
-    this.parts = []; this.texts = []; this.flames = []; this.bats = []; this.prints = []; this.flakes = []; this.lastPrint = new Map();
+    this.pings = []; this.parts = []; this.texts = []; this.flames = []; this.bats = []; this.prints = []; this.flakes = []; this.lastPrint = new Map();
     this.cam = { x: 0, y: 0 }; this.shake = 0; this.zoom = 3;
     this.layers = null;
   }
   setMap(map, seed) {
     this.map = map; this.layers = buildLayers(map, seed);
-    this.parts = []; this.texts = []; this.flames = []; this.bats = []; this.prints = []; this.flakes = []; this.lastPrint.clear(); this.camInit = false;
+    this.pings = []; this.parts = []; this.texts = []; this.flames = []; this.bats = []; this.prints = []; this.flakes = []; this.lastPrint.clear(); this.camInit = false;
     this.spiral = map.type === 'arena' ? arenaSpiral() : [];
   }
   resize() {
@@ -459,6 +459,7 @@ export class Renderer {
   }
   ring(x, y, col, r = 50) { this.parts.push({ ring: true, x, y, r: 2, max: r, life: 0.45, col }); }
   text(x, y, txt, col = '#fff') { this.texts.push({ x, y, txt, col, life: 1.2 }); }
+  ping(x, y, col = '#ffe14a') { this.pings.push({ x, y, col, life: 1.6 }); }
   blast(tiles) { this.flames.push({ tiles, t: 0.5 }); }
 
   hatFor(p) {
@@ -493,6 +494,28 @@ export class Renderer {
     const world = () => g.setTransform(z, 0, 0, z, -cx * z, -cy * z);
     world();
     g.drawImage(this.layers.ground, 0, 0);
+    // conveyor belts: dark rubber with moving chevrons
+    if (map.belt) {
+      const tx0 = Math.max(0, Math.floor(cx / TS) - 1), ty0 = Math.max(0, Math.floor(cy / TS) - 1);
+      const tx1 = Math.min(MW - 1, Math.ceil((cx + vw) / TS) + 1), ty1 = Math.min(MH - 1, Math.ceil((cy + vh) / TS) + 1);
+      const off = Math.floor((t * BELT_SPEED) % 8);
+      for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
+        const d = map.belt[y * MW + x];
+        if (d < 0) continue;
+        const px = x * TS, py = y * TS, horiz = d % 2 === 0, sgn = d < 2 ? 1 : -1;
+        P(g, '#33333c', px, py, TS, TS);
+        if (horiz) { P(g, '#55555f', px, py, TS, 1); P(g, '#55555f', px, py + 15, TS, 1); } else { P(g, '#55555f', px, py, 1, TS); P(g, '#55555f', px + 15, py, 1, TS); }
+        for (let k = -1; k < 2; k++) {
+          const o = ((k * 8 + off * sgn) % 16 + 16) % 16;
+          for (let j = 0; j < 4; j++) {
+            const a = o + (sgn > 0 ? -j : j), b1 = 4 + j, b2 = 11 - j;
+            if (a < 0 || a > 15) continue;
+            if (horiz) { P(g, '#e0b252', px + a, py + b1); P(g, '#e0b252', px + a, py + b2); }
+            else { P(g, '#e0b252', px + b1, py + a); P(g, '#e0b252', px + b2, py + a); }
+          }
+        }
+      }
+    }
     const reveal = me && me.fx && me.fx.eye > 0;
     const ctf = v.mode === 'ctf';
     const colorOf = p => ctf && p.team >= 0 ? TEAM_COLS[p.team] : p.color;
@@ -616,7 +639,7 @@ export class Renderer {
       if (reveal || p.id === v.me) return false;
       if (p.fx && p.fx.invis > 0) return true;
       const far = !me || Math.hypot(me.x - p.x, me.y - p.y) > 28;
-      return (inHide(p) && far) || (underUp(p) && me && (me.z || 0) === 1 && far);
+      return (inHide(p) && (far || p.hero === 'ninja')) || (underUp(p) && me && (me.z || 0) === 1 && far);
     };
     const ents = [];
     for (const p of v.players) if (p.alive) ents.push(p);
@@ -643,7 +666,7 @@ export class Renderer {
       if (tiny) g.restore();
       g.globalAlpha = 1;
       const hx = Math.round(p.x), hy = Math.round(p.y) - (tiny ? 13 : 20);
-      if (it && v.mode === 'classic') {
+      if (it && (v.mode === 'classic' || v.mode === 'heroes')) {
         const b = Math.round(Math.sin(t * 6) * 1.5);
         if (hw) pumpkin(g, hx, hy - 8 + b, true);
         else { P(g, OL, hx - 3, hy - 9 + b, 7, 4); P(g, '#ff3b3b', hx - 2, hy - 8 + b, 5, 2); P(g, OL, hx - 1, hy - 5 + b, 3, 2); P(g, '#ff3b3b', hx, hy - 6 + b, 1, 2); }
@@ -715,9 +738,9 @@ export class Renderer {
     for (const p of ents) {
       if (hiddenFor(p)) continue;
       const self = p.id === v.me;
-      const lift = (p.it && (v.mode === 'classic' || v.mode === 'bomb') ? 33 : 25) - (p.fx && p.fx.tiny > 0 ? 7 : 0);
+      const lift = (p.it && ((v.mode === 'classic' || v.mode === 'heroes') || v.mode === 'bomb') ? 33 : 25) - (p.fx && p.fx.tiny > 0 ? 7 : 0);
       const ny = Math.round(p.y) - lift;
-      let nm = p.name || '';
+      let nm = (p.hero && HEROES[p.hero] ? HEROES[p.hero].icon + ' ' : '') + (p.name || '');
       if ((v.mode === 'bomber' || v.mode === 'pacman') && p.lives != null && !p.decoy) nm += ' ' + '♥'.repeat(Math.max(0, p.lives));
       g.fillStyle = '#000a'; g.fillText(nm, Math.round(p.x) + 0.5, ny + 0.5);
       g.fillStyle = self ? '#ffd86b' : ctf && p.team >= 0 ? shade(TEAM_COLS[p.team], 0.45) : p.it ? '#ff8a7a' : '#f0ece2';
@@ -832,11 +855,42 @@ export class Renderer {
     g.globalAlpha = 1;
     this.texts = this.texts.filter(q => q.life > 0);
 
+    // whistle pings: visible even in the dark
+    for (const q of this.pings) {
+      q.life -= dt;
+      const k2 = 1 - q.life / 1.6;
+      g.globalAlpha = Math.max(0, q.life / 1.6);
+      g.strokeStyle = q.col; g.lineWidth = 1;
+      for (const rr of [6 + k2 * 30, k2 * 18]) { g.beginPath(); g.arc(q.x, q.y - 8, Math.max(1, rr), 0, Math.PI * 2); g.stroke(); }
+      g.fillStyle = q.col; g.fillText('♪', Math.round(q.x + 6), Math.round(q.y - 18 - k2 * 8));
+    }
+    g.globalAlpha = 1;
+    this.pings = this.pings.filter(q => q.life > 0);
+    // reaction bubbles
+    if (v.emotes) {
+      g.textAlign = 'center';
+      for (const p of [...v.players, ...v.decoys]) {
+        const em = v.emotes.get(p.id);
+        if (!em || hiddenFor(p) || !(p.alive || p.ghost)) continue;
+        const E = EMOTES[em.i], bx = Math.round(p.x), by = Math.round(p.y) - 32 + Math.round(Math.min(0, (em.t - 2.3) * 20));
+        g.font = '4px "Press Start 2P", monospace';
+        const w = Math.round(g.measureText(E.t).width + 12);
+        g.globalAlpha = Math.min(1, em.t * 3);
+        P(g, OL, bx - w / 2 - 1, by - 8, w + 2, 10); P(g, '#fbf6ea', bx - w / 2, by - 7, w, 8);
+        P(g, '#fbf6ea', bx - 1, by + 1, 3, 1); P(g, OL, bx, by + 2, 1, 1);
+        g.textAlign = 'left';
+        g.font = '6px sans-serif'; g.fillText(E.e, bx - w / 2 + 1, by - 1);
+        g.font = '4px "Press Start 2P", monospace'; g.fillStyle = '#2a2a2a'; g.fillText(E.t, bx - w / 2 + 9, by - 1);
+        g.textAlign = 'center';
+      }
+      g.globalAlpha = 1;
+    }
+
     // edge arrows toward what matters in this mode
     g.setTransform(1, 0, 0, 1, 0, 0);
     if (me && me.alive && v.phase === 'play') {
       const targets = [];
-      if (['classic', 'bomb', 'infect'].includes(v.mode)) {
+      if (['classic', 'heroes', 'bomb', 'infect'].includes(v.mode)) {
         const list = v.players.filter(p => p.alive && p !== me && !hiddenFor(p) && (me.it ? !p.it : p.it));
         if (me.it) list.sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y));
         for (const p of me.it ? list.slice(0, 1) : list) targets.push([p.x, p.y - 8, me.it ? '#ffd86b' : '#ff4a3b']);

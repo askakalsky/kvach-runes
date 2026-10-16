@@ -11,6 +11,23 @@ body { touch-action: none; user-select: none; -webkit-user-select: none; overscr
 #game3d { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: none; pointer-events: none; image-rendering: pixelated; }
 body.v3d #game3d { display: block; }
 #viewBtn { font-size: 9px !important; color: var(--acc); }
+.micBtn { font-size: 14px !important; }
+.micBtn.on { border-color: #7dff8a !important; }
+.micBtn.talk { box-shadow: 0 0 10px #7dff8a !important; }
+#lobby .micBtn { font-size: 12px !important; }
+#lobby .micBtn::after { content: ' микрофон'; font-size: 10px; }
+#heroRow { display: flex; flex-direction: column; gap: 6px; }
+#heroRow label { display: grid; grid-template-columns: 100px 1fr; align-items: center; gap: 8px; color: var(--dim); font-size: 10px; }
+#heroDesc { color: #c9c3b4; background: #181a1e; padding: 8px; border-left: 3px solid #ffe14a; }
+#bombBtn.cool { opacity: .55; border-color: #666; }
+#emoBtn { position: absolute; right: max(30px, env(safe-area-inset-right)); bottom: calc(max(22px, env(safe-area-inset-bottom)) + 120px); width: 54px; height: 54px; border-radius: 50%; font-size: 24px; padding: 0; background: rgba(31,34,39,.8); border: 2px solid #555; box-shadow: 0 3px 0 #000; touch-action: none; }
+#emoWheel { position: absolute; inset: 0; background: rgba(0,0,0,.35); pointer-events: auto; z-index: 6; }
+#emoWheel button { position: absolute; left: 50%; top: 50%; width: 92px; height: 66px; margin: -33px 0 0 -46px; transform: rotate(var(--a)) translate(140px) rotate(calc(-1 * var(--a))); border-radius: 14px; background: #262a30f2; border: 2px solid var(--acc); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px; touch-action: none; }
+#emoWheel b { font-size: 24px; line-height: 1; }
+#emoWheel span { font-size: 7px; color: #fff; }
+#emoWheel i { position: absolute; top: 3px; left: 6px; font-size: 7px; color: var(--dim); font-style: normal; }
+@media (pointer: coarse) { #emoWheel i { display: none; } }
+@media (max-height: 460px) { #emoBtn { bottom: calc(max(22px, env(safe-area-inset-bottom)) + 96px); width: 46px; height: 46px; font-size: 20px; } #emoWheel button { transform: rotate(var(--a)) translate(96px) rotate(calc(-1 * var(--a))); width: 80px; height: 56px; margin: -28px 0 0 -40px; } }
 button, input, select { font-family: var(--font); font-size: 11px; color: var(--ink); }
 b.red { color: var(--red); }
 

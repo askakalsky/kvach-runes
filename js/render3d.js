@@ -1,8 +1,8 @@
 // Voxel 3D renderer for the same game state. Draws the world with three.js and
 // uses the 2D canvas on top as an overlay for particles, names and floating text.
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-import { TS, MW, MH, T, isHideT, arenaSpiral, isWinter } from './map.js';
-import { RUNES, ITEMS, TEAM_COLS, MOB_COLS } from './sim.js';
+import { TS, MW, MH, T, isHideT, arenaSpiral, isWinter, BELT_SPEED } from './map.js';
+import { RUNES, ITEMS, TEAM_COLS, MOB_COLS, HEROES, EMOTES } from './sim.js';
 import { CAPES } from './skins.js';
 
 const U = v => v / TS;           // pixels -> tile units
@@ -147,7 +147,7 @@ export class Renderer3D {
     this.myLight = new THREE.PointLight('#ffe8b0', 0, 9, 1.2);
     this.scene.add(this.amb, this.sun, this.sun.target, this.myLight);
     this.spots = [];
-    this.parts = []; this.texts = []; this.flakes = []; this.flames = []; this.shake = 0;
+    this.parts = []; this.texts = []; this.flakes = []; this.flames = []; this.pings = []; this.shake = 0;
     this.cam = new THREE.Vector3(); this.camInit = false;
     this.world = null;
     this.pawns = new Map();
@@ -167,6 +167,7 @@ export class Renderer3D {
   }
   ring(x, y, col, r = 50) { for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; this.parts.push({ x, y, h: 4, vx: Math.cos(a) * r * 2, vy: Math.sin(a) * r * 2, vh: 0, life: 0.45, max: 0.45, col, size: 2 }); } }
   text(x, y, txt, col = '#fff') { this.texts.push({ x, y, h: 28, txt, col, life: 1.2 }); }
+  ping(x, y, col = '#ffe14a') { this.pings.push({ x, y, col, life: 1.6 }); }
   blast(tiles) { this.flames.push({ tiles, t: 0.5 }); }
 
   setMap(map, seed, layers2d) {
@@ -268,6 +269,21 @@ export class Renderer3D {
       const t2 = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.07, 6, 16), new THREE.MeshLambertMaterial({ color: pac ? '#2d5bff' : map.type === 'magic' ? '#ff6b9a' : '#b07cff', emissive: '#3a1a7a' }));
       t2.position.set(i % MW + 0.5, 0.5, ((i / MW) | 0) + 0.5); W.add(t2); this.portals.push(t2);
     }
+    // conveyor belts: one instanced mesh, chevron texture scrolls along each strip
+    const belts = []; for (let i = 0; i < MW * MH; i++) if (map.belt && map.belt[i] >= 0) belts.push(i);
+    this.beltTex = null;
+    if (belts.length) {
+      const bt = canvasTex((g2, P) => {
+        P('#33333c', 0, 0, 16, 16); P('#55555f', 0, 0, 16, 1); P('#55555f', 0, 15, 16, 1);
+        for (const o of [3, 11]) for (let j = 0; j < 4; j++) { P('#e0b252', o - j, 4 + j); P('#e0b252', o - j, 11 - j); }
+      });
+      bt.wrapS = THREE.RepeatWrapping;
+      this.beltTex = bt;
+      const mesh = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: bt }), belts.length);
+      const rot = [0, -Math.PI / 2, Math.PI, Math.PI / 2];
+      belts.forEach((i, k) => place(mesh, k, i % MW + 0.5, 0.03, ((i / MW) | 0) + 0.5, 1, 0.06, 1, rot[map.belt[i]]));
+      mesh.instanceMatrix.needsUpdate = true; W.add(mesh);
+    }
     // garland lights (new year)
     this.lights = null;
     if (th === 'newyear' && layers2d.lights.length) {
@@ -361,6 +377,7 @@ export class Renderer3D {
 
     // world animation & dynamic instanced sets
     for (const pt of this.portals) pt.rotation.y += dt * 2;
+    if (this.beltTex) this.beltTex.offset.x = -((t * BELT_SPEED / TS) % 1);
     if (this.lights) { const ph = Math.floor(t * 2); const cols = ['#ff4a3b', '#ffd23f', '#4ad0ff', '#7dff5a', '#ff7ad9']; for (let k = 0; k < this.lights.count; k++) this.lights.setColorAt(k, new THREE.Color(cols[(k + ph) % 5])); this.lights.instanceColor.needsUpdate = true; }
     if (this.crateN !== map.crates.size) {
       this.crateN = map.crates.size; let k = 0;
@@ -388,7 +405,7 @@ export class Renderer3D {
       if (reveal || p.id === v.me) return false;
       if (p.fx && p.fx.invis > 0) return true;
       const far = !me || Math.hypot(me.x - p.x, me.y - p.y) > 28;
-      return (inHide(p) && far) || (underUp(p) && me && (me.z || 0) === 1 && far);
+      return (inHide(p) && (far || p.hero === 'ninja')) || (underUp(p) && me && (me.z || 0) === 1 && far);
     };
     this.bushMat.opacity = me && me.alive && inHide(me) ? 0.45 : 1;
     if (this.upMesh) this.upMat.opacity = me && underUp(me) && !me.stairs ? 0.35 : 1;
@@ -456,7 +473,7 @@ export class Renderer3D {
       }
       const hk = hatFor(p);
       if (m.hatKey !== hk) { if (m.hat) m.head.remove(m.hat); m.hat = hatMesh(hk); m.hat.position.y = 0.2; m.head.add(m.hat); m.hatKey = hk; m.head.visible = hk !== 'pumpkin'; m.pumpkinHead.visible = hk === 'pumpkin'; }
-      m.marker.visible = !!p.it && v.mode === 'classic'; m.marker.position.y = 1.65 + Math.sin(t * 6) * 0.08;
+      m.marker.visible = !!p.it && (v.mode === 'classic' || v.mode === 'heroes'); m.marker.position.y = 1.65 + Math.sin(t * 6) * 0.08;
       if (m.marker.visible && hw) m.marker.material = lam('#d9772e', { emissive: '#5a2a00' });
       m.bomb.visible = !!p.it && v.mode === 'bomb';
       m.ring.visible = (!!p.it && v.mode !== 'hide') || (ctf && p.team >= 0);
@@ -499,7 +516,7 @@ export class Renderer3D {
       if (hiddenFor(p) || (hiding && p.id !== v.me && !(me && Math.hypot(me.x - p.x, me.y - p.y) < 50))) continue;
       const [nx, ny, ok] = this.project(p.x, p.y, (hOf(p) * TS) + 30);
       if (!ok) continue;
-      let nm = p.name || '';
+      let nm = (p.hero && HEROES[p.hero] ? HEROES[p.hero].icon + ' ' : '') + (p.name || '');
       if ((v.mode === 'bomber' || v.mode === 'pacman') && p.lives != null && !p.decoy) nm += ' ' + '♥'.repeat(Math.max(0, p.lives));
       g.fillStyle = '#000a'; g.fillText(nm, nx + d, ny + d);
       g.fillStyle = p.id === v.me ? '#ffd86b' : ctf && p.team >= 0 ? TEAM_COLS[p.team] : p.it ? '#ff8a7a' : '#f0ece2';
@@ -517,6 +534,35 @@ export class Renderer3D {
     }
     g.globalAlpha = 1;
     this.texts = this.texts.filter(q => q.life > 0);
+    // whistle pings
+    for (const q of this.pings) {
+      q.life -= dt;
+      const k2 = 1 - q.life / 1.6, [px, py, ok] = this.project(q.x, q.y, 14);
+      if (!ok) continue;
+      g.globalAlpha = Math.max(0, q.life / 1.6); g.strokeStyle = q.col; g.lineWidth = 2 * d;
+      g.beginPath(); g.arc(px, py, (10 + k2 * 60) * d, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = q.col; g.fillText('♪', px + 12 * d, py - (16 + k2 * 20) * d);
+    }
+    g.globalAlpha = 1;
+    this.pings = this.pings.filter(q => q.life > 0);
+    // reaction bubbles
+    if (v.emotes) for (const p of [...v.players, ...v.decoys]) {
+      const em = v.emotes.get(p.id);
+      if (!em || hiddenFor(p) || !(p.alive || p.ghost)) continue;
+      const E = EMOTES[em.i], [bx, by0, ok] = this.project(p.x, p.y, hOf(p) * TS + 44);
+      if (!ok) continue;
+      const by = by0 + Math.min(0, (em.t - 2.3) * 60) * d;
+      g.font = `${Math.round(10 * d)}px "Press Start 2P", monospace`;
+      const w = g.measureText(E.t).width + 34 * d, h = 26 * d;
+      g.globalAlpha = Math.min(1, em.t * 3);
+      g.fillStyle = OL; g.fillRect(bx - w / 2 - 2 * d, by - h - 2 * d, w + 4 * d, h + 4 * d);
+      g.fillStyle = '#fbf6ea'; g.fillRect(bx - w / 2, by - h, w, h); g.fillRect(bx - 4 * d, by, 8 * d, 5 * d);
+      g.textAlign = 'left';
+      g.font = `${Math.round(15 * d)}px sans-serif`; g.fillText(E.e, bx - w / 2 + 5 * d, by - 7 * d);
+      g.font = `${Math.round(10 * d)}px "Press Start 2P", monospace`; g.fillStyle = '#2a2a2a'; g.fillText(E.t, bx - w / 2 + 26 * d, by - 9 * d);
+      g.textAlign = 'center';
+    }
+    g.globalAlpha = 1;
     // snow
     if (win || ev === 'blizzard') {
       const want = ev === 'blizzard' ? 260 : 90;
@@ -542,7 +588,7 @@ export class Renderer3D {
     // edge arrows
     if (me && me.alive && v.phase === 'play') {
       const targets = [];
-      if (['classic', 'bomb', 'infect'].includes(v.mode)) {
+      if (['classic', 'heroes', 'bomb', 'infect'].includes(v.mode)) {
         const list = v.players.filter(p => p.alive && p !== me && !hiddenFor(p) && (me.it ? !p.it : p.it));
         if (me.it) list.sort((a, b) => Math.hypot(a.x - me.x, a.y - me.y) - Math.hypot(b.x - me.x, b.y - me.y));
         for (const p of me.it ? list.slice(0, 1) : list) targets.push([p.x, p.y, me.it ? '#ffd86b' : '#ff4a3b']);

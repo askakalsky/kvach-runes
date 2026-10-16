@@ -1,5 +1,5 @@
 import { genMap, MAP_TYPES } from './map.js';
-import { Sim, RUNES, ITEMS, MODES, EVENTS, THEMES, GIFTS, STORYTELLERS, BOT_NAMES, BOT_NAMES_THEME, TEAM_COLS, TEAM_NAMES, KOTH_WIN, CTF_WIN, speedMult, slippery, moveBody, pickMapType, SUDDEN } from './sim.js';
+import { Sim, RUNES, ITEMS, MODES, EVENTS, THEMES, GIFTS, STORYTELLERS, BOT_NAMES, BOT_NAMES_THEME, TEAM_COLS, TEAM_NAMES, KOTH_WIN, CTF_WIN, HEROES, HERO_KEYS, EMOTES, speedMult, slippery, moveBody, pickMapType, SUDDEN } from './sim.js';
 import { Renderer, drawPawn, drawRuneIcon } from './render.js';
 import { HATS, CAPES, TRAILS, ACH, loadStats, unlocked, reqText, recordResult } from './skins.js';
 import * as A from './audio.js';
@@ -19,10 +19,11 @@ const prof = (() => {
   try { s = JSON.parse(localStorage.getItem('kvach-prof')); } catch (e) { }
   if (!s || !s.name) s = { name: 'Игрок' + (100 + Math.floor(Math.random() * 900)), color: pick(COLORS), hair: Math.floor(Math.random() * 4), hairCol: pick(HAIRCOLS) };
   s.skin = Object.assign({ hat: 'none', cape: 'none', trail: 'none' }, s.skin);
+  if (!HEROES[s.hero]) s.hero = 'runner';
   return s;
 })();
 const saveProf = () => { try { localStorage.setItem('kvach-prof', JSON.stringify(prof)); } catch (e) { } };
-const meInfo = id => ({ id, name: prof.name, color: prof.color, hair: prof.hair, hairCol: prof.hairCol, skin: { ...prof.skin } });
+const meInfo = id => ({ id, name: prof.name, color: prof.color, hair: prof.hair, hairCol: prof.hairCol, skin: { ...prof.skin }, hero: prof.hero });
 const cleanSkin = s => ({ hat: HATS[s && s.hat] ? s.hat : 'none', cape: CAPES[s && s.cape] ? s.cape : 'none', trail: TRAILS[s && s.trail] ? s.trail : 'none' });
 
 const canvas = $('game');
@@ -130,7 +131,7 @@ $('hostBtn').onclick = () => {
   $('roomCode').textContent = '····';
   renderLobby(); show('lobby');
   hostRoom({
-    onReady: (code, p) => { peer = p; $('roomCode').textContent = code; renderLobby(); },
+    onReady: (code, p) => { peer = p; setupVoiceReceive(p); $('roomCode').textContent = code; updateVoicePeers(); renderLobby(); },
     onConn: c => setupHostConn(c),
     onError: e => { console.warn(e); toast('Ошибка сети: ' + (e.type || e)); },
   });
@@ -142,6 +143,7 @@ $('joinBtn').onclick = () => {
   role = 'client'; myId = null;
   toast('Подключаюсь к ' + code + '…', 8000);
   peer = joinRoom(code, {
+    onPeer: p => setupVoiceReceive(p),
     onOpen: c => { hostConn = c; c.send({ t: 'hello', ...meInfo(null) }); },
     onData: onClientMsg,
     onClose: () => { if (role === 'client') { toast('Связь с хостом потеряна'); leaveAll(); } },
@@ -159,6 +161,7 @@ $('profBtn').onclick = () => { renderProfile(); show('profile'); };
 $('profBack').onclick = () => show('menu');
 
 function leaveAll() {
+  stopMic(); voice.peers = [];
   role = null; sim = null; cl = null; results = null;
   for (const { conn } of conns.values()) try { conn.close(); } catch (e) { }
   conns.clear();
@@ -219,7 +222,7 @@ $('shareBtn').onclick = async () => {
   } catch (e) { try { await navigator.clipboard.writeText(url); toast('Ссылка скопирована!'); } catch (e2) { toast(url, 6000); } }
 };
 
-function lobbyData() { return { t: 'lobby', roster: roster.map(({ id, name, color, hair, hairCol }) => ({ id, name, color, hair, hairCol })), settings: { ...settings } }; }
+function lobbyData() { return { t: 'lobby', roster: roster.map(({ id, name, color, hair, hairCol, hero }) => ({ id, name, color, hair, hairCol, hero })), settings: { ...settings } }; }
 function pushLobby() { if (role === 'host') broadcast(lobbyData()); }
 
 function renderLobby(data) {
@@ -240,12 +243,15 @@ function renderLobby(data) {
   const mapName = s.mode === 'bomber' ? 'Арена' : s.mode === 'pacman' ? 'Лабиринт пакмена' : MAP_TYPES[s.map] || 'случайная карта';
   $('clientMode').textContent = `${MODES[s.mode].name} · ${mapName} · ${s.dur / 60} мин · ботов: ${s.bots} · ${THEMES[s.theme] || ''}`;
   $('clientMode').classList.toggle('hidden', isHost);
+  $('heroRow').classList.toggle('hidden', s.mode !== 'heroes');
+  $('heroSel').value = prof.hero; $('heroDesc').textContent = HEROES[prof.hero].desc;
+  syncMicButtons();
   const list = $('roster');
   list.innerHTML = '';
   for (const r of d.roster) {
     const li = document.createElement('div');
     li.className = 'pl';
-    li.innerHTML = `<i style="background:${safeCol(r.color)}"></i><span>${esc(r.name)}${r.id === myId ? ' (ты)' : ''}${r.id === 'h' ? ' ★' : ''}</span>`;
+    li.innerHTML = `<i style="background:${safeCol(r.color)}"></i><span>${d.settings.mode === 'heroes' && HEROES[r.hero] ? HEROES[r.hero].icon + ' ' : ''}${esc(r.name)}${r.id === myId ? ' (ты)' : ''}${r.id === 'h' ? ' ★' : ''}${voiceSpeaking(r.id) ? ' 🔊' : ''}</span>`;
     list.appendChild(li);
   }
   const nb = Math.max(0, Math.min(MAX_PLAYERS - d.roster.length, s.bots));
@@ -263,10 +269,11 @@ function setupHostConn(conn) {
     roster = roster.filter(r => r.id !== info.id);
     if (sim) { const p = sim.byId(info.id); if (p) { p.bot = true; p.name += ' 🤖'; } broadcast({ t: 'roster', roster: rosterInfo() }); }
     toast(`${info.name} вышел`);
+    updateVoicePeers();
     renderLobby(); pushLobby();
   });
 }
-function rosterInfo() { return sim.players.map(({ id, name, color, hair, hairCol, bot, skin, team }) => ({ id, name, color, hair, hairCol, bot, skin, team })); }
+function rosterInfo() { return sim.players.map(({ id, name, color, hair, hairCol, bot, skin, team, hero }) => ({ id, name, color, hair, hairCol, bot, skin, team, hero })); }
 function startMsg() { return { t: 'start', seed: sim.seed, mode: sim.mode, dur: sim.dur, mapType: sim.mapType, theme: sim.theme, roster: rosterInfo() }; }
 
 function onHostMsg(conn, m) {
@@ -274,11 +281,12 @@ function onHostMsg(conn, m) {
   if (m.t === 'hello') {
     if (roster.length >= MAX_PLAYERS) { conn.send({ t: 'full' }); return; }
     const id = 'p' + (nextPid++);
-    const info = { id, name: String(m.name || 'Игрок').slice(0, 12), color: COLORS.includes(m.color) ? m.color : pick(COLORS), hair: (m.hair | 0) % 4, hairCol: HAIRCOLS.includes(m.hairCol) ? m.hairCol : HAIRCOLS[0], skin: cleanSkin(m.skin) };
+    const info = { id, name: String(m.name || 'Игрок').slice(0, 12), color: COLORS.includes(m.color) ? m.color : pick(COLORS), hair: (m.hair | 0) % 4, hairCol: HAIRCOLS.includes(m.hairCol) ? m.hairCol : HAIRCOLS[0], skin: cleanSkin(m.skin), hero: HEROES[m.hero] ? m.hero : 'runner' };
     conns.set(conn.peer, { conn, id, name: info.name });
     roster.push(info);
     conn.send({ t: 'welcome', id });
     toast(`${info.name} зашёл!`);
+    updateVoicePeers();
     A.sfx('pick');
     if (sim && sim.phase !== 'end') {
       sim.addPlayer({ ...info });
@@ -288,9 +296,11 @@ function onHostMsg(conn, m) {
     return;
   }
   const info = conns.get(conn.peer);
+  if (info && m.t === 'hero' && HEROES[m.h]) { const r = roster.find(q => q.id === info.id); if (r) { r.hero = m.h; renderLobby(); pushLobby(); } return; }
   if (!info || !sim) return;
   const p = sim.byId(info.id);
   if (!p) return;
+  if (m.t === 'emo') { if (p) sim.emote(p, m.e | 0); return; }
   if (m.t === 'in') {
     if (m.tp === p.tp && (p.alive || p.ghost) && sim.phase === 'play' && Number.isFinite(m.x) && Number.isFinite(m.y)) {
       if (Math.hypot(m.x - p.x, m.y - p.y) < 120) { p.x = m.x; p.y = m.y; p.z = m.z === 1 ? 1 : 0; p.stairs = m.st ? 1 : 0; } else p.tp++;
@@ -325,9 +335,10 @@ function enterGame(mode, theme) {
   show('game');
   results = null; lastRune = undefined; lastTick = -1;
   applyTheme(theme); A.setMusic('game');
-  const act = { bomber: ['💣', 'бомба'], koth: ['✊', 'толчок'] }[mode];
+  const act = { bomber: ['💣', 'бомба'], koth: ['✊', 'толчок'], heroes: [HEROES[prof.hero].icon, HEROES[prof.hero].ab] }[mode];
   $('bombBtn').classList.toggle('hidden', !act);
   if (act) { $('bombBtn').querySelector('b').textContent = act[0]; $('bombBtn').querySelector('span').textContent = act[1]; }
+  syncMicButtons();
   $('keysHint').textContent = act ? `WASD — бег · ПРОБЕЛ — ${act[1]} · E — руна` : 'WASD — бег · ПРОБЕЛ / E — руна';
 }
 
@@ -348,6 +359,7 @@ function onClientMsg(m) {
       setMapAll(cl.map, m.seed);
       enterGame(m.mode, m.theme);
       break;
+    case 'vp': voice.peers = m.list || []; callAll(); break;
     case 'roster': if (cl) cl.roster = new Map(m.roster.map(r => [r.id, r])); break;
     case 's': onSnap(m); break;
     case 'end': results = m.res; setTimeout(() => results && showResults(results), 1200); break;
@@ -370,7 +382,7 @@ function onSnap(m) {
   const o = cl.own;
   if (q.tp !== o.tp) { o.x = q.x; o.y = q.y; o.vx = o.vy = 0; o.tp = q.tp; o.z = q.z || 0; o.stairs = q.st || 0; }
   o.it = !!q.it; o.alive = !!q.a; o.ghost = !!q.g; o.score = q.s; o.sfx = q.f || {};
-  o.lives = q.l; o.boots = q.bo || 0; o.pw = q.pw; o.team = q.tm ?? -1; o.carry = q.c ?? -1;
+  o.hero = q.h || null; o.cd = q.cd || 0; o.lives = q.l; o.boots = q.bo || 0; o.pw = q.pw; o.team = q.tm ?? -1; o.carry = q.c ?? -1;
   if (now - cl.useAt > 450) o.rune = q.r;
 }
 
@@ -442,6 +454,27 @@ function handleFx(f) {
       break;
     case 'impact': FX().burst(f.x, f.y, f.h ? '#d9772e' : '#9a7a5a', 22, 80, 0.6, 2); FX().ring(f.x, f.y, '#ffb03b', 20); A.sfx('impact', vol); if (vol > 0.7) FX().shake = 0.5; break;
     case 'pel': if (mine) A.sfx('chomp'); break;
+    case 'whistle': {
+      FX().ping(f.x, f.y, mine ? '#7dff8a' : '#ffe14a');
+      const dx = me ? f.x - me.x : 0, dist = me ? Math.hypot(dx, f.y - me.y) : 0;
+      A.sfx('whistle', mine ? 0.6 : Math.max(0.35, 1 - dist / 420), mine ? 0 : Math.max(-1, Math.min(1, dx / 220)));
+      if (mine) center('ТЫ СВИСТНУЛ! 🎵', '#ffe14a');
+      break;
+    }
+    case 'emote': {
+      emotes.set(f.id, { i: f.e, t: 2.5 });
+      A.sfx('emote' + f.e, mine ? 0.8 : Math.max(0.3, vol));
+      break;
+    }
+    case 'ability': {
+      const h = HEROES[f.h];
+      FX().burst(f.x, f.y - 8, '#ffe14a', 14, 60);
+      if (f.h === 'frost') FX().ring(f.x, f.y - 4, '#bfe9ff', 48);
+      if (f.h === 'brute') FX().ring(f.x, f.y - 4, '#ff9a5a', 42);
+      if (f.h === 'builder') A.sfx('wall', vol); else A.sfx('ability', Math.max(vol, 0.3));
+      if (mine) FX().text(f.x, f.y - 26, h.ab + '!', '#ffe14a');
+      break;
+    }
     case 'power': FX().ring(f.x, f.y, '#2d5bff', 60); A.sfx('power'); if (mine) center('СУПЕРСИЛА! ЕШЬ МОБОВ!', '#6a8aff'); break;
     case 'eat': FX().burst(f.x, f.y - 6, '#2d5bff', 16, 60); FX().text(f.x, f.y - 22, '+10', '#ffd23f'); A.sfx('eat', Math.max(vol, 0.4)); break;
     case 'flagtake': A.sfx('flagtake', Math.max(vol, 0.5)); FX().text(f.x, f.y - 30, 'ФЛАГ!', TEAM_COLS[f.team]); if (mine) center('НЕСИ ФЛАГ ДОМОЙ!', '#ffd23f'); else if (me && me.team === f.team) toast('Ваш флаг украли!'); break;
@@ -473,6 +506,116 @@ function handleFx(f) {
   }
 }
 function vib(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) { } }
+
+// ---------- voice chat (PeerJS media calls, each open mic calls every other player) ----------
+const voice = { on: false, stream: null, calls: new Map(), ins: new Map(), peers: [], speaking: new Map(), meAn: null, buf: new Uint8Array(256) };
+function voiceSpeaking(id) { return performance.now() - (voice.speaking.get(id) || 0) < 350; }
+function analyser(stream) {
+  const ctx = A.audioCtx();
+  if (!ctx) return null;
+  try { const src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser(); an.fftSize = 256; src.connect(an); return an; } catch (e) { return null; }
+}
+function level(an) {
+  if (!an) return 0;
+  an.getByteTimeDomainData(voice.buf);
+  let m = 0; for (const x of voice.buf) m = Math.max(m, Math.abs(x - 128));
+  return m;
+}
+function updateVoicePeers() {
+  if (role !== 'host' || !peer) return;
+  voice.peers = [{ peer: peer.id, id: myId }, ...[...conns.entries()].map(([pid, c]) => ({ peer: pid, id: c.id }))];
+  broadcast({ t: 'vp', list: voice.peers });
+  callAll();
+}
+function setupVoiceReceive(p) {
+  p.on('call', call => {
+    call.answer();
+    call.on('stream', s => playVoice(call.peer, s));
+    call.on('close', () => dropVoice(call.peer));
+    call.on('error', () => dropVoice(call.peer));
+  });
+}
+function playVoice(pid, stream) {
+  dropVoice(pid);
+  const a = new Audio();
+  a.srcObject = stream; a.autoplay = true; a.play().catch(() => toast('Нажми на экран, чтобы слышать друга'));
+  voice.ins.set(pid, { a, an: analyser(stream) });
+}
+function dropVoice(pid) { const v = voice.ins.get(pid); if (v) { v.a.pause(); v.a.srcObject = null; voice.ins.delete(pid); } }
+function callAll() {
+  if (!voice.on || !peer || !voice.stream) return;
+  for (const { peer: pid } of voice.peers) {
+    if (pid === peer.id || voice.calls.has(pid)) continue;
+    const c = peer.call(pid, voice.stream);
+    if (!c) continue;
+    voice.calls.set(pid, c);
+    const drop = () => voice.calls.delete(pid);
+    c.on('close', drop); c.on('error', drop);
+  }
+}
+async function toggleMic() {
+  if (voice.on) { stopMic(); toast('Микрофон выключен'); return; }
+  if (role !== 'host' && role !== 'client') return toast('Голос работает в комнате с другом');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast('Браузер не даёт микрофон (нужен https)');
+  A.audioInit();
+  try { voice.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+  catch (e) { toast('Нет доступа к микрофону'); return; }
+  voice.on = true; voice.meAn = analyser(voice.stream);
+  callAll();
+  toast('Микрофон включён — тебя слышат');
+  syncMicButtons();
+}
+function stopMic() {
+  voice.on = false;
+  for (const c of voice.calls.values()) try { c.close(); } catch (e) { }
+  voice.calls.clear();
+  if (voice.stream) voice.stream.getTracks().forEach(t => t.stop());
+  voice.stream = null; voice.meAn = null;
+  for (const pid of [...voice.ins.keys()]) dropVoice(pid);
+  syncMicButtons();
+}
+function syncMicButtons() {
+  for (const b of document.querySelectorAll('.micBtn')) { b.classList.toggle('on', voice.on); b.textContent = voice.on ? '🎤' : '🔇'; }
+  for (const b of document.querySelectorAll('.micBtn')) b.classList.toggle('hidden', role !== 'host' && role !== 'client');
+}
+function voiceTick() {
+  const now = performance.now();
+  if (voice.on && level(voice.meAn) > 10 && myId) voice.speaking.set(myId, now);
+  for (const [pid, v] of voice.ins) {
+    if (level(v.an) <= 10) continue;
+    const who = voice.peers.find(q => q.peer === pid);
+    if (who) voice.speaking.set(who.id, now);
+  }
+  for (const b of document.querySelectorAll('.micBtn')) b.classList.toggle('talk', voice.on && voiceSpeaking(myId));
+}
+for (const b of document.querySelectorAll('.micBtn')) b.onclick = () => toggleMic();
+
+// ---------- reactions ----------
+const emotes = new Map();
+function sendEmote(i) {
+  $('emoWheel').classList.add('hidden');
+  if (sim) { const mp = sim.byId(myId); if (mp) sim.emote(mp, i); }
+  else if (cl) send({ t: 'emo', e: i });
+}
+$('emoWheel').innerHTML = EMOTES.map((e, i) => `<button data-i="${i}" style="--a:${i * 45 - 90}deg"><b>${e.e}</b><span>${e.t}</span><i>${i + 1}</i></button>`).join('');
+for (const b of $('emoWheel').querySelectorAll('button')) b.addEventListener('pointerdown', ev => { ev.preventDefault(); ev.stopPropagation(); sendEmote(+b.dataset.i); });
+$('emoWheel').addEventListener('pointerdown', ev => { if (ev.target === $('emoWheel')) $('emoWheel').classList.add('hidden'); });
+$('emoBtn').addEventListener('pointerdown', e => { e.preventDefault(); $('emoWheel').classList.toggle('hidden'); });
+addEventListener('keydown', e => {
+  if (!input.enabled || e.target.tagName === 'INPUT') return;
+  const d = /^Digit([1-8])$/.exec(e.code);
+  if (d) sendEmote(+d[1] - 1);
+  if (e.code === 'KeyT') $('emoWheel').classList.toggle('hidden');
+});
+
+// ---------- hero pick ----------
+$('heroSel').innerHTML = Object.entries(HEROES).map(([k, h]) => `<option value="${k}">${h.icon} ${h.name}</option>`).join('');
+$('heroSel').onchange = e => {
+  prof.hero = e.target.value; saveProf(); A.sfx('click');
+  const r = roster.find(q => q.id === myId); if (r) r.hero = prof.hero;
+  if (role === 'client') send({ t: 'hero', h: prof.hero });
+  renderLobby(); pushLobby();
+};
 
 // ---------- results ----------
 function showResults(res) {
@@ -521,6 +664,12 @@ function updateHud(v, dt) {
     if (rune) $('runeBtn').style.setProperty('--rc', RUNES[rune].col);
   }
   if (centerT > 0) { centerT -= dt; if (centerT <= 0) $('center').classList.remove('pop'); }
+  if (v.mode === 'heroes' && me && me.hero) {
+    const h = HEROES[me.hero], cd = me.abilCd ?? me.cd ?? 0;
+    $('bombBtn').querySelector('b').textContent = h.icon;
+    $('bombBtn').querySelector('span').textContent = cd > 0 ? `${h.ab} ${Math.ceil(cd)}` : h.ab;
+    $('bombBtn').classList.toggle('cool', cd > 0);
+  }
   hudT -= dt;
   if (hudT > 0) return;
   hudT = 0.1;
@@ -538,24 +687,24 @@ function updateHud(v, dt) {
   const its = v.players.filter(p => p.it && p.alive);
   const meIt = me && me.alive && me.it && v.mode !== 'infect';
   const itName = meIt ? '<b style="color:#ff6b5b">ТЫ!</b>' : its.length ? `<b style="color:#ff8a7a">${esc(its[0].name)}</b>` : '';
-  if (v.mode === 'classic') sub = `Квач: ${itName}`;
+  if ((v.mode === 'classic' || v.mode === 'heroes')) sub = `Квач: ${itName}`;
   else if (v.mode === 'bomb') sub = `💣 ${Math.max(0, v.fuse).toFixed(1)}<br>${itName}`;
   else if (bomber) { const pw = me && (me.pw || [me.maxB, me.range]); sub = me && me.alive && pw ? `💣${pw[0]} 🔥${pw[1]} 👟${me.boots || 0}` : ''; }
   else if (v.mode === 'ctf') sub = v.teamScore ? `<b style="color:${TEAM_COLS[0]}">${v.teamScore[0]}</b> : <b style="color:${TEAM_COLS[1]}">${v.teamScore[1]}</b> из ${CTF_WIN}${me && me.team >= 0 ? `<br>ты: ${TEAM_NAMES[me.team]}` : ''}` : '';
   else if (v.mode === 'koth') sub = `до ${KOTH_WIN} с · трон переедет через ${Math.ceil(v.zone ? v.zone.t : 0)}`;
   else if (v.mode === 'pacman') sub = `точек: ${R.map.pellets.size}${v.fright > 0 ? ` · <b style="color:#6a8aff">СИЛА ${Math.ceil(v.fright)}</b>` : ''}`;
-  else if (v.mode === 'hide') sub = hiding ? (me && me.it ? 'Водишь. Не подглядывай!' : 'Прячься!') : `Спрятались: <b>${v.players.filter(p => p.alive && !p.it).length}</b>${me && me.it ? '<br>ты ищешь 🔦' : ''}`;
+  else if (v.mode === 'hide') sub = hiding ? (me && me.it ? 'Водишь. Не подглядывай!' : 'Прячься!') : `Спрятались: <b>${v.players.filter(p => p.alive && !p.it).length}</b>${me && me.it ? '<br>ты ищешь 🔦' : ''}<br>🎵 свист через ${Math.ceil(v.whistleT || 0)}`;
   else sub = `Живых: <b>${v.players.filter(p => p.alive && !p.it).length}</b>/${v.players.length}`;
   if (me && !me.alive) sub += '<br>👻 ты призрак';
   $('sub').innerHTML = sub;
   const rows = v.players.slice();
   const scored = ['koth', 'pacman', 'ctf'].includes(v.mode);
-  if (v.mode === 'classic') rows.sort((a, b) => a.score - b.score);
+  if ((v.mode === 'classic' || v.mode === 'heroes')) rows.sort((a, b) => a.score - b.score);
   else if (bomber) rows.sort((a, b) => (b.alive - a.alive) || ((b.lives || 0) - (a.lives || 0)) || (b.score - a.score));
   else if (scored) rows.sort((a, b) => b.score - a.score);
   else rows.sort((a, b) => (b.alive - a.alive) || (a.it - b.it) || (b.score - a.score));
   $('board').innerHTML = rows.map(p => {
-    const val = v.mode === 'classic' ? p.score.toFixed(0) + 'с'
+    const val = (v.mode === 'classic' || v.mode === 'heroes') ? p.score.toFixed(0) + 'с'
       : !p.alive ? '👻'
       : bomber ? '♥'.repeat(Math.max(0, p.lives || 0))
       : v.mode === 'pacman' ? `${p.score.toFixed(0)}`
@@ -564,7 +713,7 @@ function updateHud(v, dt) {
       : v.mode === 'hide' && v.hideT > 0 ? ''
       : p.it ? (v.mode === 'bomb' ? '💣' : v.mode === 'hide' ? '🔦' : '🧟') : p.score.toFixed(0) + 'с';
     const col = v.mode === 'ctf' && p.team >= 0 ? TEAM_COLS[p.team] : p.color;
-    return `<div class="${p.id === myId ? 'me' : ''}${p.it && v.mode !== 'hide' ? ' it' : ''}${!p.alive ? ' dead' : ''}"><i style="background:${safeCol(col)}"></i><span>${esc(p.name)}</span><em>${val}</em></div>`;
+    return `<div class="${p.id === myId ? 'me' : ''}${p.it && v.mode !== 'hide' ? ' it' : ''}${!p.alive ? ' dead' : ''}"><i style="background:${safeCol(col)}"></i><span>${p.hero && HEROES[p.hero] ? HEROES[p.hero].icon : ''}${esc(p.name)}${voiceSpeaking(p.id) ? '🔊' : ''}</span><em>${val}</em></div>`;
   }).join('');
   R.drawMini($('mini'), v);
 }
@@ -581,7 +730,7 @@ function hostView() {
     decoys: sim.decoys.map(d => decoyView(d, sim.byId(d.owner))),
     puddles: sim.puddles, meteors: sim.meteors, spirits: sim.spirits, sd: sim.sdN || 0,
     mobs: sim.mobs.map(m => ({ x: m.x, y: m.y, kind: m.kind, s: m.state === 'fright' ? 1 : m.state === 'dead' ? 2 : 0 })), fright: sim.fright,
-    flags: sim.mode === 'ctf' ? sim.flags : null, teamScore: sim.teamScore, zone: sim.zone || null, hideT: sim.hideT,
+    flags: sim.mode === 'ctf' ? sim.flags : null, teamScore: sim.teamScore, zone: sim.zone || null, hideT: sim.hideT, whistleT: sim.whistleT, emotes,
     walls: [...sim.map.dyn.keys()], event: sim.event && sim.event.k,
     time: sim.time, phase: sim.phase, fuse: sim.fuse, mode: sim.mode, me: myId,
   };
@@ -603,11 +752,11 @@ function clientView(now) {
     const info = cl.roster.get(q.i) || { name: '?', color: '#888888' };
     if (q.i === myId && cl.own) {
       const o = cl.own;
-      return { ...info, id: q.i, x: o.x, y: o.y, fdx: o.fdx, fdy: o.fdy, m: o.m, it: o.it, alive: o.alive, ghost: o.ghost, score: o.score, rune: o.rune, fx: o.fx, lives: o.lives, boots: o.boots, pw: o.pw, z: o.z, stairs: o.stairs, team: o.team, carry: o.carry };
+      return { ...info, id: q.i, x: o.x, y: o.y, fdx: o.fdx, fdy: o.fdy, m: o.m, it: o.it, alive: o.alive, ghost: o.ghost, score: o.score, rune: o.rune, fx: o.fx, lives: o.lives, boots: o.boots, pw: o.pw, z: o.z, stairs: o.stairs, team: o.team, carry: o.carry, hero: o.hero, cd: o.cd };
     }
     const lp = lerpPos(q.i, 'p', 0);
     const src = lp ? lp[2] : q;
-    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, ghost: !!q.g, score: q.s, rune: q.r, fx: q.f || {}, lives: q.l, z: q.z || 0, stairs: q.st || 0, team: q.tm ?? -1, carry: q.c ?? -1, seed: q.i.length };
+    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, ghost: !!q.g, score: q.s, rune: q.r, fx: q.f || {}, lives: q.l, z: q.z || 0, stairs: q.st || 0, team: q.tm ?? -1, carry: q.c ?? -1, hero: q.h || null, cd: q.cd || 0, seed: q.i.length };
   });
   const decoys = L.de.map(d => {
     const lp = lerpPos(d[0], 'de', 1);
@@ -623,7 +772,7 @@ function clientView(now) {
   return {
     map: cl.map, players, decoys, spirits, mobs, flags, fright: L.fr || 0, teamScore: L.ts,
     zone: L.kz ? { x: L.kz[0], y: L.kz[1], r: L.kz[2], owner: L.kz[3], contested: !!L.kz[4], t: L.kz[5] } : null,
-    hideT: L.ht || 0,
+    hideT: L.ht || 0, whistleT: L.wh || 0, emotes,
     runes: L.ru.map(r => ({ id: r[0], x: r[1], y: r[2], k: r[3] })),
     traps: L.tr.map(t => ({ x: t[1], y: t[2], owner: t[3], armed: !!t[4] })),
     puddles: (L.pu || []).map(p => ({ x: p[1], y: p[2] })),
@@ -646,6 +795,8 @@ function localMove(ev) {
 function tick(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  for (const [k, e] of emotes) { e.t -= dt; if (e.t <= 0) emotes.delete(k); }
+  voiceTick();
   if (sim) {
     const mp = sim.byId(myId), mv = localMove(sim.event && sim.event.k);
     if (mp) {
@@ -693,7 +844,7 @@ function tick(now) {
         }
       };
       while (input.useQ > 0) { input.useQ--; tryRune(); }
-      while (input.actQ > 0) { input.actQ--; if (cl.mode === 'bomber' || cl.mode === 'koth') { if (o.alive) cl.bombSeq++; } else tryRune(); }
+      while (input.actQ > 0) { input.actQ--; if (cl.mode === 'bomber' || cl.mode === 'koth' || cl.mode === 'heroes') { if (o.alive) cl.bombSeq++; } else tryRune(); }
       if (now - cl.lastSend >= 33) {
         cl.lastSend = now;
         send({ t: 'in', x: r1(o.x), y: r1(o.y), dx: r2(o.fdx), dy: r2(o.fdy), m: o.m, u: cl.useSeq, bs: cl.bombSeq, tp: o.tp, z: o.z || 0, st: o.stairs || 0 });

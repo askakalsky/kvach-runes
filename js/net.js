@@ -33,8 +33,9 @@ export function hostRoom({ onReady, onConn, onError }) {
   attempt();
 }
 
-export function joinRoom(code, { onOpen, onData, onClose, onError }) {
+export function joinRoom(code, { onOpen, onData, onClose, onError, onPeer }) {
   const peer = new window.Peer(undefined, OPTS);
+  if (onPeer) onPeer(peer);
   let opened = false;
   const timer = setTimeout(() => { if (!opened) onError({ type: 'timeout' }); }, 15000);
   peer.on('open', () => {

@@ -28,6 +28,7 @@ export function audioInit() {
 }
 
 export function isMuted() { return muted; }
+export function audioCtx() { return ac; }
 export function toggleMute() {
   muted = !muted;
   try { localStorage.setItem('kvach-mute', muted ? '1' : '0'); } catch (e) { }
@@ -142,9 +143,11 @@ function playStep(s, t) {
   }
 }
 
-export function sfx(name, vol = 1) {
+export function sfx(name, vol = 1, pan = 0) {
   if (!ac || muted || vol <= 0.02) return;
-  const t = ac.currentTime + 0.01, d = sfxG;
+  const t = ac.currentTime + 0.01;
+  let d = sfxG;
+  if (pan && ac.createStereoPanner) { const pn = ac.createStereoPanner(); pn.pan.value = Math.max(-1, Math.min(1, pan)); pn.connect(sfxG); d = pn; }
   const v = Math.min(1, vol);
   switch (name) {
     case 'tag':
@@ -197,6 +200,19 @@ export function sfx(name, vol = 1) {
       o.connect(g); g.connect(d); o.start(t); lfo.start(t); o.stop(t + 0.75); lfo.stop(t + 0.75);
       break;
     }
+    case 'whistle':
+      tone(t, 1250, 0.18, 'sine', 0.3 * v, d, 1900);
+      tone(t + 0.2, 1900, 0.25, 'sine', 0.3 * v, d, 1350);
+      break;
+    case 'emote0': [76, 72, 69, 64].forEach((n, i) => tone(t + i * 0.08, mf(n), 0.07, 'square', 0.14 * v, d)); break;
+    case 'emote1': tone(t, 500, 0.12, 'square', 0.14 * v, d, 900); tone(t + 0.13, 900, 0.14, 'square', 0.14 * v, d, 500); break;
+    case 'emote2': tone(t, 180, 0.4, 'triangle', 0.25 * v, d, 120); break;
+    case 'emote3': [72, 79].forEach((n, i) => tone(t + i * 0.1, mf(n), 0.12, p25, 0.16 * v, d)); break;
+    case 'emote4': tone(t, 900, 0.4, 'square', 0.12 * v, d, 300); break;
+    case 'emote5': [79, 76].forEach((n, i) => tone(t + i * 0.12, mf(n), 0.12, 'triangle', 0.2 * v, d)); break;
+    case 'emote6': [60, 59, 58, 55].forEach((n, i) => tone(t + i * 0.16, mf(n), 0.15, 'square', 0.14 * v, d)); break;
+    case 'emote7': [72, 76, 79, 84].forEach((n, i) => tone(t + i * 0.06, mf(n), 0.1, 'triangle', 0.18 * v, d)); break;
+    case 'ability': tone(t, 400, 0.15, 'square', 0.14 * v, d, 1200); hit(t, 0.12, 0.12 * v, 2500, 'bandpass', d); break;
     case 'chomp': tone(t, 520, 0.05, 'square', 0.07 * v, d, 300); break;
     case 'power': [60, 64, 67, 72, 76].forEach((n, i) => tone(t + i * 0.05, mf(n), 0.08, 'square', 0.18 * v, d)); break;
     case 'eat': tone(t, 300, 0.25, 'square', 0.22 * v, d, 1400); break;

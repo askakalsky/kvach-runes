@@ -418,11 +418,14 @@ export function genMap(seed, type = 'meadow', theme = '', mode = '') {
     }
   }
 
+  const belt = new Int8Array(MW * MH).fill(-1);
+  if (type !== 'arena' && type !== 'pacman') genBelts(c, belt, type === 'maze' ? 4 : 7);
+
   const crateSet = new Set(crates);
   const spawns = [], walk = [], hides = [];
   for (let i = 0; i < MW * MH; i++) {
     const t = g[i];
-    if (isSolidT(t) || t === T.WATER || t === T.PORTAL || t === T.STAIRS) continue;
+    if (isSolidT(t) || t === T.WATER || t === T.PORTAL || t === T.STAIRS || belt[i] >= 0) continue;
     if (pac && t === T.FLOOR) continue;
     const pt = [(i % MW) * TS + 8, ((i / MW) | 0) * TS + 8];
     if (!crateSet.has(i)) walk.push(pt);
@@ -430,10 +433,31 @@ export function genMap(seed, type = 'meadow', theme = '', mode = '') {
     if (c.up[i] && !isHideT(t)) hides.push(pt);
   }
   return {
-    g, up: c.up, dyn: new Map(), crates: crateSet, portals, spawns, walk, hides, type, theme,
+    g, up: c.up, belt, dyn: new Map(), crates: crateSet, portals, spawns, walk, hides, type, theme,
     pellets: new Set(pac ? pac.pellets : []), power: new Set(pac ? pac.power : []),
     home: pac && pac.home, door: pac && pac.door, bases,
   };
+}
+
+// conveyor belts ("беговые дорожки"): 2-wide strips that carry you along
+export const BELT_DX = [1, 0, -1, 0], BELT_DY = [0, 1, 0, -1], BELT_SPEED = 62;
+function genBelts(c, belt, n) {
+  const ok = (x, y) => {
+    if (!c.inb(x, y)) return false;
+    const i = y * MW + x;
+    return [T.GRASS, T.DIRT, T.ROAD, T.SAND, T.FLOOR].includes(c.g[i]) && !c.up[i] && belt[i] < 0;
+  };
+  for (let tries = 0, made = 0; tries < 120 && made < n; tries++) {
+    const dir = c.ri(0, 3), len = c.ri(5, 9), horiz = dir % 2 === 0;
+    const x0 = c.ri(2, MW - 3), y0 = c.ri(2, MH - 3);
+    const cells = [];
+    for (let s = 0; s < len; s++) for (let w = 0; w < 2; w++) cells.push(horiz ? [x0 + s, y0 + w] : [x0 + w, y0 + s]);
+    if (!cells.every(([x, y]) => ok(x, y))) continue;
+    // keep a free margin so belts never touch each other
+    if (cells.some(([x, y]) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => c.inb(x + dx, y + dy) && belt[(y + dy) * MW + x + dx] >= 0))) continue;
+    for (const [x, y] of cells) belt[y * MW + x] = dir;
+    made++;
+  }
 }
 
 function keepLargestRegion(g) {

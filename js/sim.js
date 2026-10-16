@@ -1,5 +1,5 @@
 // Authoritative game simulation (runs on host / solo).
-import { genMap, TS, MW, MH, T, collides, tileAt, tileIdx, solidIdx, bfs, isHideT, isSolidT, MAP_TYPES, arenaSpiral, isWinter } from './map.js';
+import { genMap, TS, MW, MH, T, collides, tileAt, tileIdx, solidIdx, bfs, isHideT, isSolidT, MAP_TYPES, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED } from './map.js';
 
 export const R = 5, BASE = 72, SUDDEN = 50, KOTH_WIN = 45, CTF_WIN = 3, HIDE_T = 30;
 
@@ -14,7 +14,7 @@ export const RUNES = {
   swap:   { name: 'Обмен',    col: '#ff6b6b', desc: 'Меняешься местами со случайным игроком.' },
   haste:  { name: 'Ветер',    col: '#c6ff4a', desc: 'Скорость ×1.5 на 4 с.' },
   shock:  { name: 'Гром',     col: '#5ab0ff', desc: 'Оглушает всех вокруг на 1.3 с.' },
-  phase:  { name: 'Призрак',  col: '#e8e8ff', desc: '3 с проходишь сквозь стены и деревья.' },
+  phase:  { name: 'Сквозь стены', col: '#e8e8ff', desc: '4 с проходишь сквозь стены, деревья и любые препятствия.' },
   gust:   { name: 'Вихрь',    col: '#9ef0e0', desc: 'Отбрасывает всех вокруг на 3 клетки.' },
   slime:  { name: 'Слизь',    col: '#8ad24a', desc: 'Лужа слизи: чужие в ней ползут вдвое медленнее.' },
   eye:    { name: 'Око',      col: '#ffe08a', desc: '6 с видишь всех — и в кустах, и невидимых.' },
@@ -52,8 +52,25 @@ export const ITEMS = {
 export const GIFTS = {
   shield: 'Щит!', haste: 'Скорость!', rune: 'Руна!', bonus: 'Бонус!', coal: 'Уголёк :(',
 };
+export const HEROES = {
+  runner:    { name: 'Спринтер',  icon: '⚡', ab: 'Рывок',        cd: 5,  desc: 'Рывок каждые 5 с. Всегда бегает на 6% быстрее.' },
+  ninja:     { name: 'Ниндзя',    icon: '🥷', ab: 'Дымовуха',     cd: 12, desc: 'Невидимость 3 с. В кустах не виден даже вплотную.' },
+  mage:      { name: 'Маг',       icon: '🔮', ab: 'Скачок',       cd: 9,  desc: 'Телепорт на 4 клетки вперёд, даже сквозь стены.' },
+  builder:   { name: 'Строитель', icon: '🧱', ab: 'Стена',        cd: 9,  desc: 'Ставит широкую стену за спиной.' },
+  frost:     { name: 'Ледяной',   icon: '❄',  ab: 'Стужа',        cd: 14, desc: 'Замораживает всех рядом. Сам не скользит на льду.' },
+  phantom:   { name: 'Фантом',    icon: '👻', ab: 'Сквозь стены', cd: 11, desc: '2.5 с проходит сквозь любые препятствия.' },
+  brute:     { name: 'Силач',     icon: '💪', ab: 'Удар',         cd: 7,  desc: 'Отбрасывает всех рядом. Вдвое быстрее приходит в себя.' },
+  trickster: { name: 'Плут',      icon: '🎭', ab: 'Двойник',      cd: 10, desc: 'Выпускает двойника и на миг исчезает.' },
+};
+export const HERO_KEYS = Object.keys(HEROES);
+export const EMOTES = [
+  { e: '😂', t: 'Ха-ха!' }, { e: '😜', t: 'Не догонишь!' }, { e: '🐢', t: 'Черепаха!' }, { e: '😎', t: 'Изи' },
+  { e: '😱', t: 'Аааа!' }, { e: '👋', t: 'Пока-пока!' }, { e: '🤡', t: 'Клоун!' }, { e: '❤️', t: 'GG' },
+];
+export const WHISTLE_T = 20;
 export const MODES = {
   classic: { name: 'Классика', desc: 'Один квач. Касание — и квач уже ты. Побеждает тот, кто меньше всех пробыл квачом.' },
+  heroes:  { name: 'Герои', desc: 'Классический квач, но каждый — герой со своей способностью (кнопка действия) и пассивкой. Выбери героя в лобби.' },
   bomb:    { name: 'Горячая картошка', desc: 'У квача бомба с фитилём. Передай её касанием! Кто держит при взрыве — выбывает и становится призраком.' },
   infect:  { name: 'Заражение', desc: 'Пойманные становятся квачами. Выживи до конца таймера.' },
   bomber:  { name: 'Бомбермен', desc: 'Все с бомбами! Взрывай ящики, собирай огонь, бомбы и сапоги. 3 жизни, последний живой побеждает.' },
@@ -66,7 +83,7 @@ export const EVENTS = {
   night:    { name: 'Ночь',              text: 'Солнце село. Видно только то, что рядом.', dur: 20, no: ['hide'] },
   frost:    { name: 'Гололёд',           text: 'Земля покрылась льдом. Держись!', dur: 15 },
   rain:     { name: 'Звездопад рун',     text: 'С неба посыпались руны!', dur: 0 },
-  adren:    { name: 'Ярость квача',      text: 'Квач стал быстрее на 25%!', dur: 15, only: ['classic', 'bomb', 'infect'] },
+  adren:    { name: 'Ярость квача',      text: 'Квач стал быстрее на 25%!', dur: 15, only: ['classic', 'heroes', 'bomb', 'infect'] },
   chaos:    { name: 'Буря телепортов',   text: 'Всех раскидало по карте!', dur: 0, no: ['hide', 'ctf', 'pacman'] },
   giant:    { name: 'Безумие рун',       text: 'Все получили случайную руну!', dur: 0 },
   fog:      { name: 'Туман',             text: 'Густой туман. Мини-карта ослепла.', dur: 20, no: ['hide'] },
@@ -76,7 +93,7 @@ export const EVENTS = {
   meteor:   { name: 'Метеоритный дождь', text: 'С неба падают камни! Беги из красных кругов.', dur: 12, hw: 'Тыквопад', no: ['hide', 'pacman'] },
   tiny:     { name: 'Лилипуты',          text: 'Все уменьшились на 15 секунд!', dur: 0 },
   mirror:   { name: 'Зазеркалье',        text: 'Управление перевёрнуто!', dur: 10 },
-  coup:     { name: 'Переворот',         text: 'Квачом назначен случайный игрок!', dur: 0, only: ['classic'] },
+  coup:     { name: 'Переворот',         text: 'Квачом назначен случайный игрок!', dur: 0, only: ['classic', 'heroes'] },
   spirits:  { name: 'Ночь духов',        text: 'Духи вышли на охоту. Не дай им коснуться!', dur: 20, theme: ['halloween'], no: ['hide', 'pacman'] },
   blizzard: { name: 'Метель',            text: 'Снежная буря: ничего не видно и скользко!', dur: 15, theme: ['winter', 'newyear'], no: ['hide'] },
   santa:    { name: 'Дед Мороз',         text: 'Над картой пролетели сани и рассыпали подарки!', dur: 0, theme: ['newyear'] },
@@ -114,11 +131,12 @@ export function speedMult(p, mode, ev, bot) {
   if (f.chill > 0) m *= 0.6;
   if (f.tiny > 0) m *= 1.1;
   if (p.boots) m *= 1 + 0.12 * p.boots;
+  if (p.hero === 'runner') m *= 1.06;
   if (p.carry >= 0 && p.carry !== undefined) m *= 0.9;
   if (bot) m *= 0.93;
   return m;
 }
-export function slippery(map, p, ev) { return ev === 'frost' || ev === 'blizzard' || ((p.z || 0) === 0 && tileAt(map, p.x, p.y) === T.ICE); }
+export function slippery(map, p, ev) { return p.hero !== 'frost' && (ev === 'frost' || ev === 'blizzard' || ((p.z || 0) === 0 && tileAt(map, p.x, p.y) === T.ICE)); }
 
 // corner assist: when blocked on one axis, slide sideways into a nearby gap
 function nudge(map, p, nx, ny, axisX, step, z) {
@@ -156,6 +174,13 @@ export function moveBody(map, p, ax, ay, dt, mult, slip, noclip) {
     if (!collides(map, p.x, ny, R, z)) p.y = ny;
     else if (!(Math.abs(ax) < 0.5 && nudge(map, p, p.x, ny, false, p.vy * dt, z))) p.vy *= slip ? -0.4 : 0;
   }
+  // conveyor belts carry you along (ground floor only)
+  const bi = tileIdx(p.x, p.y), bd = map.belt ? map.belt[bi] : -1;
+  if (bd >= 0 && !noclip && z !== 1 && !p.stairs) {
+    const bx = BELT_DX[bd] * BELT_SPEED * dt, by = BELT_DY[bd] * BELT_SPEED * dt;
+    if (!collides(map, p.x + bx, p.y, R, z)) p.x += bx;
+    if (!collides(map, p.x, p.y + by, R, z)) p.y += by;
+  }
   // floors: stairs switch level, falling off a missing floor drops you down
   const ti = tileIdx(p.x, p.y);
   if (map.g[ti] === T.STAIRS) p.stairs = 1;
@@ -176,6 +201,8 @@ export function pickMapType(mode, wanted) {
 export class Sim {
   constructor(settings, roster, seed, localId) {
     this.mode = settings.mode; this.dur = settings.dur; this.seed = seed; this.localId = localId;
+    this.tagMode = this.mode === 'classic' || this.mode === 'heroes';
+    this.whistleT = WHISTLE_T;
     this.theme = settings.theme || '';
     this.mapType = settings.mapType;
     this.storyteller = settings.storyteller || pick(STORYTELLERS);
@@ -195,7 +222,7 @@ export class Sim {
     roster.forEach((r, i) => this.addPlayer(r, spots[i]));
     if (this.mode === 'bomber') for (const p of this.players) this.clearAround(tileIdx(p.x, p.y));
     else if (this.mode === 'hide') { const n = this.players.length >= 6 ? 2 : 1; for (const p of [...this.players].sort(() => Math.random() - 0.5).slice(0, n)) p.it = true; }
-    else if (['classic', 'bomb', 'infect'].includes(this.mode)) pick(this.players).it = true;
+    else if (['classic', 'heroes', 'bomb', 'infect'].includes(this.mode)) pick(this.players).it = true;
     if (this.mode === 'ctf') {
       const bases = this.map.bases || [[4 * TS + 8, (MH >> 1) * TS + 8], [(MW - 5) * TS + 8, (MH >> 1) * TS + 8]];
       this.flags = bases.map(([x, y], t) => ({ team: t, hx: x, hy: y, x, y, carrier: null, dropT: 0 }));
@@ -268,7 +295,8 @@ export class Sim {
       id: r.id, name: r.name, color: r.color, hair: r.hair, hairCol: r.hairCol, skin: r.skin || {}, bot: !!r.bot, team: team ?? -1,
       x: spot[0], y: spot[1], vx: 0, vy: 0, fdx: 0, fdy: 1, m: 0, ax: 0, ay: 0, z: 0, stairs: 0,
       it: false, alive: true, ghost: false, ghostCd: 0, score: 0, rune: null, held: 0, fx: FX0(), st: ST0(),
-      tp: 0, portalCd: 0, tagCd: 0, useSeq: 0, bombSeq: 0, outAt: 0, shoveCd: 0, carry: -1,
+      tp: 0, portalCd: 0, tagCd: 0, useSeq: 0, bombSeq: 0, outAt: 0, shoveCd: 0, carry: -1, emoteCd: 0,
+      hero: this.mode === 'heroes' ? (HEROES[r.hero] ? r.hero : pick(HERO_KEYS)) : null, abilCd: 2,
       lives: 3, maxB: 1, range: 2, boots: 0,
       hist: [], histT: 0,
       ai: { lx: spot[0], ly: spot[1], stuckT: 0, unstuck: 0, ux: 0, uy: 0, wx: null, wy: null, t: 0, jx: 0, jy: 0, goal: -1, spot: null },
@@ -324,7 +352,41 @@ export class Sim {
   action(p) {
     if (this.mode === 'bomber') return this.placeBomb(p);
     if (this.mode === 'koth') return this.push(p);
+    if (this.mode === 'heroes') return this.useAbility(p);
     this.useRune(p);
+  }
+  emote(p, e) {
+    if (!p || p.emoteCd > 0 || !(e >= 0 && e < EMOTES.length)) return;
+    p.emoteCd = 1.2;
+    this.fx('emote', p.x, p.y, { id: p.id, e });
+  }
+  useAbility(p) {
+    if (this.mode !== 'heroes' || !p.alive || !p.hero || this.phase !== 'play' || p.abilCd > 0 || p.fx.frozen > 0 || p.fx.stun > 0) return;
+    const f = p.fx, ox = p.x, oy = p.y;
+    switch (p.hero) {
+      case 'runner': f.dash = 0.32; break;
+      case 'ninja': f.invis = 3; break;
+      case 'mage': { const keep = p.rune; p.rune = 'blink'; this.useRune(p); p.st.runes--; p.rune = keep; break; }
+      case 'builder': {
+        const tx = Math.floor((p.x - p.fdx * 20) / TS), ty = Math.floor((p.y - p.fdy * 20) / TS);
+        const horiz = Math.abs(p.fdy) >= Math.abs(p.fdx);
+        for (let i = -2; i <= 2; i++) this.placeWall(tx + (horiz ? i : 0), ty + (horiz ? 0 : i), 6);
+        break;
+      }
+      case 'frost':
+        for (const q of this.players) if (q !== p && q.alive && q.fx.shield <= 0 && d2(p, q) < 48 * 48) { q.fx.frozen = Math.max(q.fx.frozen, 1.3); q.vx = q.vy = 0; }
+        break;
+      case 'phantom': f.phase = 2.5; break;
+      case 'brute':
+        for (const q of this.players) if (q !== p && q.alive && q.fx.shield <= 0 && d2(p, q) < 42 * 42) { this.shove(q, p.x, p.y, 44); q.fx.stun = Math.max(q.fx.stun, 0.5); }
+        break;
+      case 'trickster':
+        this.decoys.push({ id: this.uid++, x: p.x, y: p.y, fdx: p.fdx, fdy: p.fdy, owner: p.id, life: 5, m: 1 });
+        f.invis = Math.max(f.invis, 1.5);
+        break;
+    }
+    p.abilCd = HEROES[p.hero].cd;
+    this.fx('ability', ox, oy, { id: p.id, h: p.hero, x2: Math.round(p.x), y2: Math.round(p.y) });
   }
   push(p) {
     if (!p.alive || this.phase !== 'play' || p.shoveCd > 0 || p.fx.stun > 0 || p.fx.frozen > 0) return;
@@ -348,7 +410,7 @@ export class Sim {
       case 'haste': f.haste = 4; break;
       case 'invis': f.invis = 4.5; break;
       case 'shield': if (p.it) f.reach = 4; else f.shield = 3.5; break;
-      case 'phase': f.phase = 3; break;
+      case 'phase': f.phase = 4; break;
       case 'eye': f.eye = 6; break;
       case 'tiny': f.tiny = 6; break;
       case 'blink': {
@@ -675,7 +737,7 @@ export class Sim {
     if (r === 'haste') p.fx.haste = Math.max(p.fx.haste, 3);
     if (r === 'rune') p.rune = pick(RUNE_KEYS);
     if (r === 'bonus') {
-      if (this.mode === 'classic') p.score = Math.max(0, p.score - 3);
+      if (this.tagMode) p.score = Math.max(0, p.score - 3);
       else if (this.mode === 'pacman') p.score += 5;
       else if (this.mode === 'koth') p.score = Math.min(KOTH_WIN - 1, p.score + 2);
       else if (this.mode === 'bomber') p.range = Math.min(8, p.range + 1);
@@ -701,10 +763,24 @@ export class Sim {
       this.hideT -= dt;
       for (const p of ps) if (p.it) { p.fx.stun = Math.max(p.fx.stun, 0.15); p.vx = p.vy = 0; }
       if (this.hideT <= 0) { this.hideT = 0; this.fx('seek', 0, 0, {}); this.nextEvent = Math.max(this.nextEvent, 20); }
+    } else if (this.mode === 'hide') {
+      // hiders whistle on a timer and give away their position
+      this.whistleT -= dt;
+      if (this.whistleT <= 0) {
+        this.whistleT = WHISTLE_T;
+        const hiders = ps.filter(p => p.alive && !p.it);
+        for (const p of hiders) this.fx('whistle', p.x, p.y, { id: p.id });
+        for (const s of ps) if (s.bot && s.alive && s.it && hiders.length) {
+          const h = hiders.reduce((a, b) => d2(a, s) < d2(b, s) ? a : b);
+          s.ai.last = [h.x, h.y];
+        }
+      }
     }
     for (const p of ps) {
       for (const k in p.fx) if (p.fx[k] > 0) p.fx[k] = Math.max(0, p.fx[k] - dt);
-      p.portalCd -= dt; p.tagCd -= dt; p.ghostCd -= dt; p.shoveCd -= dt;
+      if (p.hero === 'brute') { p.fx.stun = Math.max(0, p.fx.stun - dt); p.fx.frozen = Math.max(0, p.fx.frozen - dt); }
+      p.portalCd -= dt; p.tagCd -= dt; p.ghostCd -= dt; p.shoveCd -= dt; p.emoteCd -= dt;
+      if (p.abilCd > 0) p.abilCd = Math.max(0, p.abilCd - dt);
       if (p.rune) p.held += dt;
       p.histT -= dt;
       if (p.histT <= 0 && p.alive) { p.histT = 0.25; p.hist.push([p.x, p.y, p.stairs ? 0 : p.z]); if (p.hist.length > 12) p.hist.shift(); }
@@ -794,7 +870,7 @@ export class Sim {
         if (d2(p, r) >= 11 * 11 || p.z === 1) continue;
         if (r.k === 'gold') {
           p.fx.shield = 8; p.st.gold++;
-          if (this.mode === 'classic') p.score = Math.max(0, p.score - 10);
+          if (this.tagMode) p.score = Math.max(0, p.score - 10);
           if (bomber || this.mode === 'pacman') p.lives = Math.min(5, p.lives + 1);
           if (this.mode === 'pacman') p.score += 20;
           if (this.mode === 'koth') p.score = Math.min(KOTH_WIN - 1, p.score + 5);
@@ -892,7 +968,7 @@ export class Sim {
     else if (this.mode === 'koth') this.updateZone(dt);
     else if (!bomber && !(this.mode === 'hide' && this.hideT > 0)) this.checkTags();
 
-    if (this.mode === 'classic') { for (const p of ps) if (p.it && p.alive) p.score += dt; }
+    if (this.tagMode) { for (const p of ps) if (p.it && p.alive) p.score += dt; }
     else if (this.mode === 'infect' || this.mode === 'hide') { for (const p of ps) if (!p.it && p.alive) p.score += dt; }
     else if (this.mode === 'bomb') {
       for (const p of ps) if (p.alive) p.score += dt;
@@ -952,6 +1028,9 @@ export class Sim {
     this.setIt(b); b.fx.stun = Math.max(b.fx.stun, 1.0);
     if (this.mode === 'bomb' && this.fuse < 4) this.fuse = 4;
     this.fx('tag', b.x, b.y, { a: a.id, b: b.id });
+    // bots like to tease
+    if (a.bot && Math.random() < 0.4) this.emote(a, pick([0, 1, 5]));
+    else if (b.bot && Math.random() < 0.25) this.emote(b, pick([4, 6]));
   }
 
   eliminate(p) {
@@ -980,7 +1059,7 @@ export class Sim {
     const fmt = s => s >= 60 ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : `${s.toFixed(1)} с`;
     const row = (p, label, win) => ({ id: p.id, name: p.name, color: p.color, label, win: !!win, score: Math.round(p.score * 10) / 10, alive: p.alive, it: p.it, team: p.team, st: p.st, lives: p.lives });
     const out = (title, rows) => ({ title, rows, mode: this.mode, theme: this.theme, map: this.mapType });
-    if (this.mode === 'classic') {
+    if (this.tagMode) {
       ps.sort((a, b) => a.score - b.score);
       return out(`Победил ${ps[0].name}!`, ps.map((p, i) => row(p, `квачом ${fmt(p.score)}`, i === 0)));
     }
@@ -1018,13 +1097,14 @@ export class Sim {
     const fx = f => { const o = {}; for (const k in f) if (f[k] > 0) o[k] = r1(f[k]); return o; };
     const bomber = this.mode === 'bomber', lives = bomber || this.mode === 'pacman';
     const s = {
-      t: 's', ph: this.phase, c: r2(this.count), tm: r2(this.time), fu: r1(this.fuse), ht: r1(this.hideT),
+      t: 's', ph: this.phase, c: r2(this.count), tm: r2(this.time), fu: r1(this.fuse), ht: r1(this.hideT), wh: r1(this.whistleT),
       ev: this.event ? { k: this.event.k, t: r1(this.event.t) } : null,
       p: this.players.map(p => {
         const o = { i: p.id, x: r1(p.x), y: r1(p.y), dx: r2(p.fdx), dy: r2(p.fdy), m: p.m, it: p.it ? 1 : 0, a: p.alive ? 1 : 0, g: p.ghost ? 1 : 0, s: r1(p.score), r: p.rune, tp: p.tp, f: fx(p.fx), b: p.bot ? 1 : 0, z: p.z, st: p.stairs };
         if (lives) o.l = p.lives;
         if (bomber) { o.bo = p.boots; o.pw = [p.maxB, p.range]; }
         if (this.mode === 'ctf') { o.tm = p.team; o.c = p.carry; }
+        if (p.hero) { o.h = p.hero; o.cd = r1(p.abilCd); }
         return o;
       }),
       ru: this.runes.map(r => [r.id, r.x, r.y, r.k]),
@@ -1056,6 +1136,7 @@ export class Sim {
     if (p.fx.invis > 0) return false;
     if (this.mode === 'hide') return hunters.some(h => this.seesInDark(h, p));
     if (hunters.length && hunters.every(h => h.fx.blind > 0)) return hunters.some(h => d2(h, p) < 45 * 45);
+    if (p.hero === 'ninja' && isHideT(tileAt(this.map, p.x, p.y))) return false;
     if (isHideT(tileAt(this.map, p.x, p.y)) || (p.z === 0 && this.map.up[tileIdx(p.x, p.y)])) return hunters.some(h => d2(h, p) < 30 * 30);
     return true;
   }
@@ -1152,6 +1233,11 @@ export class Sim {
     let tx = null, ty = null, spd = 1;
     const alive = this.players.filter(q => q.alive), its = alive.filter(q => q.it);
     const danger = this.meteors.find(m => d2(m, p) < 26 * 26);
+    if (this.mode === 'heroes' && p.abilCd <= 0) {
+      const chased = !p.it && its.some(q => d2(q, p) < 50 * 50);
+      const near = p.it && alive.some(q => !q.it && d2(q, p) < 45 * 45);
+      if (chased || (near && !['builder', 'ninja', 'trickster'].includes(p.hero))) this.useAbility(p);
+    }
 
     if (danger) { tx = p.x + (p.x - danger.x) * 3; ty = p.y + (p.y - danger.y) * 3; }
     else if (p.it) {
