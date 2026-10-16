@@ -1,6 +1,6 @@
 import { genMap, MAP_TYPES, isSolidT, tileIdx } from './map.js';
 import { Sim, RUNES, ITEMS, MODES, EVENTS, THEMES, GIFTS, STORYTELLERS, BOT_NAMES, BOT_NAMES_THEME, TEAM_COLS, TEAM_NAMES, KOTH_WIN, CTF_WIN, HEROES, HERO_KEYS, EMOTES, WEAPONS, DM_WIN, speedMult, slippery, moveBody, pickMapType, SUDDEN } from './sim.js';
-import { Renderer, drawPawn, drawRuneIcon } from './render.js';
+import { Renderer, drawPawn, drawRuneIcon, weaponSprite } from './render.js';
 import { HATS, CAPES, TRAILS, ACH, loadStats, unlocked, reqText, recordResult } from './skins.js';
 import * as A from './audio.js';
 import { input, joy, initInput, readMove, fireHeld } from './input.js';
@@ -736,7 +736,12 @@ function updateHud(v, dt) {
   if (centerT > 0) { centerT -= dt; if (centerT <= 0) $('center').classList.remove('pop'); }
   if (v.mode === 'dm' && me) {
     const w = WEAPONS[me.wpn || 'fist'];
-    $('bombBtn').querySelector('b').textContent = w.melee ? (me.wpn === 'fist' ? '👊' : '🗡') : '🔫';
+    const bb = $('bombBtn').querySelector('b');
+    if (bb.dataset.w !== me.wpn) {
+      bb.dataset.w = me.wpn; bb.textContent = '';
+      const spr = weaponSprite(me.wpn);
+      if (spr) { const c = document.createElement('canvas'); c.width = spr.width; c.height = spr.height; c.getContext('2d').drawImage(spr, 0, 0); c.className = 'wIcon'; bb.appendChild(c); } else bb.textContent = '👊';
+    }
     $('bombBtn').querySelector('span').textContent = w.melee ? w.name : `${me.ammo}`;
     $('bombBtn').classList.toggle('cool', !w.melee && me.ammo <= 0);
     $('runeName').textContent = me.wpn && me.wpn !== 'fist' ? 'бросить' : 'подобрать';

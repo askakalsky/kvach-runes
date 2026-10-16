@@ -183,3 +183,5 @@ body[data-theme=newyear] button.big { background: #6a1f1a; }
 
 #toast { position: fixed; bottom: 140px; left: 50%; transform: translate(-50%, 20px); opacity: 0; transition: .25s; background: #262a30; border: 2px solid var(--acc); padding: 10px 14px; z-index: 50; font-size: 10px; max-width: 90vw; text-align: center; pointer-events: none; box-shadow: 4px 4px 0 #000; word-break: break-all; }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+#bombBtn .wIcon { width: 64px; height: auto; image-rendering: pixelated; display: block; }

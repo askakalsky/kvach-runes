@@ -15,20 +15,96 @@ function neonDecor(g, kind, cx, cy) {
   else if (kind === 'plant') { P(g, OL, cx - 3, cy, 7, 5); P(g, '#c85a2a', cx - 2, cy + 1, 5, 3); for (const [dx, dy] of [[-3, -4], [0, -6], [3, -4], [-2, -2], [2, -2]]) P(g, '#3fc05a', cx + dx, cy + dy, 2, 3); }
   else { P(g, OL, cx - 5, cy - 8, 11, 13); P(g, '#2a1a4a', cx - 4, cy - 7, 9, 11); P(g, '#2ff3ff', cx - 3, cy - 6, 7, 4); P(g, '#ff3fa4', cx - 2, cy, 2, 2); P(g, '#ffe14a', cx + 1, cy, 2, 2); }
 }
+// ---------- weapon pixel art ----------
+// Sprites point to the right; [ax, ay] is the pixel held in the hand.
+const WPAL = {
+  k: '#141018', d: '#26262f', m: '#45454f', l: '#7c7c8a', h: '#b8b8c8', H: '#ececf6',
+  w: '#4a2a12', W: '#7a4a22', b: '#a8743e', B: '#c99a5e', t: '#d8cfb4', T: '#a89f86',
+  s: '#c8ccd8', S: '#ffffff', r: '#7a1414', R: '#c03030', g: '#a8822a', G: '#ffd86b', p: '#1c1818', o: '#ff8a2a',
+};
+const WSPR = {
+  pistol: { a: [3, 4], rows: [
+    '..kkkkkkkkkkk.',
+    '.kHhhhhhhhhllk',
+    '.kllmmmmmmmmlk',
+    '.kmmdkkkkkkkk.',
+    '.kddkk.k......',
+    'kpppk.kk......',
+    'kpppk.........',
+    'kkkk..........',
+  ] },
+  uzi: { a: [5, 4], rows: [
+    '...kkkkkkkkkk...',
+    '..kHhhhhhhhllkkk',
+    'kkkllmmmmmmmlmmk',
+    'kdkmmdkkkkkkkkkk',
+    'k.kddkk.kk......',
+    '..kppk..kdk.....',
+    '..kppk..kdk.....',
+    '..kppk..kdk.....',
+    '..kkkk..kkk.....',
+  ] },
+  rifle: { a: [8, 4], rows: [
+    '..........kkkkkkkkkkkkk...',
+    'kkkkkkk..kHhhhhhhhhhlllkkk',
+    'kBbbbbbkkkllmmmmmmmmmmmlmk',
+    'kWWWWWWWkdmmmmdkkkkkkkkkkk',
+    'kwWWWkkkkdmkkkdk.kk.......',
+    '.kkkk..kpp.k.kdk..........',
+    '.......kppk..kdk..........',
+    '.......kkk...kkk..........',
+  ] },
+  shotgun: { a: [8, 3], rows: [
+    'kkkkkk......................',
+    'kBbbbbkkkkkkkkkkkkkkkkkkkkk.',
+    'kWWWWWWkmmHhhhhhhhhhhhhhhllk',
+    'kwWWWWkkdmmmmmmmmmmmmmmmmmdk',
+    '.kkwWkkpkkkkkkBbbbbbbbkkkkk.',
+    '....kk.pk....kwWWWWWWWk.....',
+    '.......kk.....kkkkkkkk......',
+  ] },
+  bat: { a: [3, 2], rows: [
+    '...........kkkkkkkkkk.',
+    'kkkkkkkkkkkBbbbbbbbbbk',
+    'ktTtTtTtWWWbbbbbbbbbBk',
+    'kkkkkkkkkkkWWWWWWWWWWk',
+    '...........kkkkkkkkkk.',
+  ] },
+  knife: { a: [2, 2], rows: [
+    '......kkkkkkk..',
+    'kkkkkgkSHHHHHkk',
+    'kpppkgkssssssSk',
+    'kkkkkgkkkkkkkk.',
+  ] },
+  katana: { a: [3, 2], rows: [
+    '.......kk...................',
+    'kkkkkkkGkkkkkkkkkkkkkkkkkkk.',
+    'krRrRrkgksSSSSSSSSSSSSSSssHk',
+    'kkkkkkkGkkkkkkkkkkkkkkkkkkkk',
+    '.......kk...................',
+  ] },
+};
+const wCache = {};
+// canvas with the sprite (or its white silhouette for hit flashes)
+export function weaponSprite(k, white = false) {
+  const key = k + (white ? '!' : '');
+  if (wCache[key]) return wCache[key];
+  const spr = WSPR[k];
+  if (!spr) return null;
+  const w = Math.max(...spr.rows.map(r => r.length)), h = spr.rows.length;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  spr.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) { const ch = row[x]; if (ch === '.') continue; g.fillStyle = white ? '#ffffff' : WPAL[ch] || '#ff00ff'; g.fillRect(x, y, 1, 1); } });
+  c.anchor = spr.a;
+  return (wCache[key] = c);
+}
 // held / dropped weapon sprite, drawn along +x and rotated by ang
 export function drawWeapon(g, k, x, y, ang) {
-  if (!k || k === 'fist') return;
+  const c = weaponSprite(k, !!FLASH);
+  if (!c) return;
   g.save(); g.translate(x, y); g.rotate(ang); if (Math.cos(ang) < 0) g.scale(1, -1);
-  const R2 = (c, x0, y0, w, h) => { g.fillStyle = FLASH || c; g.fillRect(x0, y0, w, h); };
-  switch (k) {
-    case 'pistol': R2(OL, -1, -1.5, 7, 3.5); R2('#9a9aa8', 0, -1, 6, 1.5); R2('#5a5a68', 0, 0, 2, 2.5); break;
-    case 'uzi': R2(OL, -1, -1.5, 9, 3.5); R2('#3a3a44', 0, -1, 8, 2); R2('#22222a', 3, 0.5, 2, 3); break;
-    case 'rifle': R2(OL, -3, -1.5, 14, 3.5); R2('#4a4a3a', -2, -1, 13, 2); R2('#22222a', 4, 0.5, 2, 3); R2('#6a4a2a', -2, -1, 3, 2.5); break;
-    case 'shotgun': R2(OL, -3, -1.5, 14, 3.5); R2('#5a5a68', 2, -1, 9, 1.2); R2('#8a5a2a', -2, -1, 5, 2.5); R2('#8a5a2a', 4, 0, 3, 1.2); break;
-    case 'bat': R2(OL, -1, -1.5, 14, 3.5); R2('#7a4a24', 0, -0.7, 4, 1.4); R2('#c89a5a', 4, -1, 9, 2.2); break;
-    case 'knife': R2(OL, -1, -1, 9, 2.6); R2('#3a2a1a', 0, -0.5, 3, 1.6); R2('#e8e8f0', 3, -0.5, 5, 1.4); break;
-    case 'katana': R2(OL, -1, -1.2, 17, 2.6); R2('#8a1a1a', 0, -0.6, 4, 1.4); R2('#ffcc33', 4, -1, 1, 2); R2('#f0f0ff', 5, -0.5, 10, 1.2); break;
-  }
+  g.imageSmoothingEnabled = false;
+  g.drawImage(c, -c.anchor[0], -c.anchor[1]);
   g.restore();
 }
 function disc(g, c, cx, cy, r) {
