@@ -43,7 +43,6 @@ input[type=range] { padding: 0; accent-color: var(--acc); }
 .row button { flex: none; width: 40%; }
 
 .who { display: flex; gap: 14px; align-items: center; }
-#preview { width: 96px; height: 120px; image-rendering: pixelated; background: #2a3320; border: 2px solid var(--line); flex: none; }
 .whoR { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
 #colors { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
 .sw { aspect-ratio: 1; padding: 0; border: 2px solid #0b0c0e; box-shadow: none; }
@@ -108,12 +107,43 @@ input[type=range] { padding: 0; accent-color: var(--acc); }
 #hostOpts label.chk span { display: flex; align-items: center; gap: 8px; color: var(--ink); }
 #hostOpts input[type=checkbox] { width: 20px; height: 20px; accent-color: #d9772e; margin: 0; }
 select:disabled { opacity: .45; }
-body.hw { --acc: #e8892e; }
-body.hw #menu, body.hw #lobby, body.hw #help { background: #120e18 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Crect width='8' height='8' fill='%23140f1b'/%3E%3Crect width='1' height='1' fill='%23221a2c'/%3E%3C/svg%3E"); }
-body.hw .panel { background: #1e1924; border-color: #4a3a58; }
-body.hw h1 { text-shadow: 3px 3px 0 #5a1f0a, 6px 6px 0 #0b0c0e; }
-body.hw h1 small::before { content: '🎃 '; }
-body.hw button.big { background: #5a2f12; }
+body[data-theme=halloween] { --acc: #e8892e; }
+body[data-theme=halloween] #menu, body[data-theme=halloween] #lobby, body[data-theme=halloween] #help, body[data-theme=halloween] #profile { background: #120e18 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Crect width='8' height='8' fill='%23140f1b'/%3E%3Crect width='1' height='1' fill='%23221a2c'/%3E%3C/svg%3E"); }
+body[data-theme=halloween] .panel { background: #1e1924; border-color: #4a3a58; }
+body[data-theme=halloween] h1 { text-shadow: 3px 3px 0 #5a1f0a, 6px 6px 0 #0b0c0e; }
+body[data-theme=halloween] h1 small::before { content: '🎃 '; }
+body[data-theme=halloween] button.big { background: #5a2f12; }
+body[data-theme=winter], body[data-theme=newyear] { --acc: #8fd0ff; }
+body[data-theme=newyear] { --acc: #ff6b5b; }
+body[data-theme=winter] #menu, body[data-theme=winter] #lobby, body[data-theme=winter] #help, body[data-theme=winter] #profile,
+body[data-theme=newyear] #menu, body[data-theme=newyear] #lobby, body[data-theme=newyear] #help, body[data-theme=newyear] #profile { background: #121a24 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Crect width='12' height='12' fill='%23131c27'/%3E%3Crect x='3' y='5' width='1' height='1' fill='%23dfe8ee'/%3E%3C/svg%3E"); }
+body[data-theme=winter] .panel, body[data-theme=newyear] .panel { background: #1b2430; border-color: #3e5468; }
+body[data-theme=winter] h1 small::before { content: '❄ '; }
+body[data-theme=newyear] h1 small::before { content: '🎄 '; }
+body[data-theme=winter] h1 { text-shadow: 3px 3px 0 #2a4a6a, 6px 6px 0 #0b0c0e; }
+body[data-theme=newyear] h1 { text-shadow: 3px 3px 0 #1f5a2a, 6px 6px 0 #0b0c0e; }
+body[data-theme=winter] button.big { background: #24445e; }
+body[data-theme=newyear] button.big { background: #6a1f1a; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.row2 button { font-size: 9px; padding: 10px 6px; }
+#preview, #preview2 { width: 96px; height: 102px; image-rendering: pixelated; background: #2a3320; border: 2px solid var(--line); flex: none; }
+#statsBox { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; align-content: start; }
+#statsBox .kv { background: #181a1e; padding: 6px; text-align: center; display: flex; flex-direction: column; gap: 4px; }
+#statsBox .kv b { color: var(--acc); font-size: 13px; }
+#statsBox .kv span { font-size: 8px; color: var(--dim); }
+#statsBox .best { grid-column: 1 / -1; list-style: none; padding: 0; margin: 0; font-size: 8px; }
+#statsBox .best li { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dashed #30343b; }
+.skins { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+.skin { font-size: 8px; padding: 8px 6px; text-align: left; display: flex; flex-direction: column; gap: 4px; box-shadow: none; }
+.skin.on { border-color: var(--acc); background: #3a3020; }
+.skin.locked { opacity: .55; }
+.skin span { color: var(--dim); font-size: 7px; }
+.achs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }
+.ach { background: #181a1e; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; opacity: .5; }
+.ach.on { opacity: 1; border-left: 3px solid var(--acc); }
+.ach b { font-size: 8px; color: var(--ink); }
+.ach span { font-size: 7px; color: var(--dim); line-height: 1.5; }
+#resAch::before { content: 'Новые ачивки!'; grid-column: 1 / -1; color: var(--acc); font-size: 10px; text-align: center; }
 #runeBtn canvas { width: 44px; height: 44px; image-rendering: pixelated; }
 #runeBtn span { font-size: 8px; color: var(--dim); }
 #runeBtn.has { border-color: var(--rc); box-shadow: 0 0 18px var(--rc), 0 4px 0 #000; animation: rb 1s infinite alternate; }

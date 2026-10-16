@@ -35,7 +35,7 @@
   <div class="panel">
     <h1>КВАЧ<small>рунные бега</small></h1>
     <div class="who">
-      <canvas id="preview" width="24" height="30"></canvas>
+      <canvas id="preview" width="32" height="34"></canvas>
       <div class="whoR">
         <input id="nameIn" maxlength="12" placeholder="Имя" autocomplete="off">
         <div id="colors"></div>
@@ -45,7 +45,20 @@
     <button id="soloBtn" class="big">Играть с ботами</button>
     <button id="hostBtn" class="big">Создать комнату</button>
     <div class="row"><input id="codeIn" placeholder="КОД" maxlength="4" autocomplete="off" autocapitalize="characters"><button id="joinBtn">Войти</button></div>
-    <button id="helpBtn" class="ghost">Как играть</button>
+    <div class="row2"><button id="profBtn">🏆 Профиль и скины</button><button id="helpBtn">Как играть</button></div>
+  </div>
+</div>
+
+<div id="profile" class="screen hidden">
+  <div class="panel wide">
+    <h2>Профиль</h2>
+    <div class="who"><canvas id="preview2" width="32" height="34"></canvas><div id="statsBox"></div></div>
+    <h3>Шапки</h3><div id="hatBox" class="skins"></div>
+    <h3>Плащи</h3><div id="capeBox" class="skins"></div>
+    <h3>След</h3><div id="trailBox" class="skins"></div>
+    <h3>Ачивки</h3><div id="achBox" class="achs"></div>
+    <p>Прогресс хранится на этом устройстве.</p>
+    <button id="profBack" class="big">Назад</button>
   </div>
 </div>
 
@@ -61,7 +74,13 @@
     <div id="hostOpts">
       <label>Режим <select id="modeSel"></select></label>
       <label>Карта <select id="mapSel"></select></label>
-      <label class="chk">Тема <span><input type="checkbox" id="hwIn"> 🎃 Хэллоуин</span></label>
+      <label>Тема <select id="themeSel"></select></label>
+      <label id="teamRow">Команды
+        <select id="teamSel">
+          <option value="hvb">Люди против ботов</option>
+          <option value="mix">Вперемешку</option>
+        </select>
+      </label>
       <label>Боты <input type="range" id="botsIn" min="0" max="7" value="3"><b id="botsVal">3</b></label>
       <label>Время
         <select id="durSel">
@@ -83,6 +102,7 @@
   <div class="panel">
     <h2 id="resTitle"></h2>
     <ol id="resList"></ol>
+    <div id="resAch" class="achs hidden"></div>
     <div id="resBtns"><button id="againBtn" class="big">Ещё раунд</button><button id="toLobbyBtn" class="ghost">В лобби</button></div>
     <p id="resWait">Ждём хоста…</p>
   </div>
@@ -96,6 +116,12 @@
     <h3>Режимы</h3><ul id="helpModes"></ul>
     <h3>Бомбермен</h3>
     <p>Бомба взрывается крестом через 2 с. Из ящиков выпадают усилители: <b>🔥 огонь</b> (дальше взрыв), <b>💣 бомба</b> (+1 одновременно), <b>👟 сапоги</b> (быстрее). Бомбы цепляют друг друга. За 50 с до конца — <b>внезапная смерть</b>: арена сжимается.</p>
+    <h3>Командные и особые режимы</h3>
+    <p><b>Захват флага</b>: красные слева, синие справа. Касание врага на своей половине отправляет его на базу. Несёшь флаг — бежишь чуть медленнее. <b>Король горы</b>: кнопка «Толчок» отбрасывает ближайшего. <b>Пакмен</b>: суперточка в углу делает мобов синими — их можно съесть за +10. <b>Прятки</b>: в темноте видно лишь свет фонарика водящего.</p>
+    <h3>Крепость</h3>
+    <p>Двухэтажная карта: по лестницам поднимаешься на деревянные помосты. Сверху не видно тех, кто внизу, — под помостом можно прятаться. Ловят только на одном этаже.</p>
+    <h3>Темы</h3>
+    <p>🎃 Хэллоуин — тыквы, летучие мыши, духи. ❄ Зима — снег, следы, снеговики, метель. 🎄 Новый год — ёлки, гирлянды, подарки и Дед Мороз (подарки — отдельно от рун).</p>
     <h3>Призраки</h3>
     <p>Выбывшие не скучают: они становятся призраками, летают сквозь стены и пугают живых — те замедляются.</p>
     <h3>Карты</h3><p id="helpMaps"></p>

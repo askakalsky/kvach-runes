@@ -94,10 +94,25 @@ const MEL_HW_B = [
   [[0, 83, 2], [2, 80, 2], [4, 76, 2], [6, 80, 2], [8, 83, 2], [10, 88, 2], [12, 87, 4]],
   [[0, 88, 2], [2, 84, 2], [4, 81, 4], [8, 76, 2], [10, 72, 2], [12, 69, 4]],
 ];
+// New Year: "Jingle Bells" (public domain, 1857) over C - C - F - G
+const PROG_NY = [
+  { root: 48, arp: [67, 72, 76] }, { root: 48, arp: [67, 72, 76] },
+  { root: 41, arp: [65, 69, 72] }, { root: 43, arp: [67, 71, 74] },
+];
+const MEL_NY_A = [
+  [[0, 76, 2], [2, 76, 2], [4, 76, 4], [8, 76, 2], [10, 76, 2], [12, 76, 4]],
+  [[0, 76, 2], [2, 79, 2], [4, 72, 3], [7, 74, 1], [8, 76, 8]],
+  [[0, 77, 2], [2, 77, 2], [4, 77, 3], [7, 77, 1], [8, 77, 2], [10, 76, 2], [12, 76, 2], [14, 76, 1], [15, 76, 1]],
+  [[0, 76, 2], [2, 74, 2], [4, 74, 2], [6, 76, 2], [8, 74, 4], [12, 79, 4]],
+];
+const MEL_NY_B = [
+  MEL_NY_A[0], MEL_NY_A[1], MEL_NY_A[2],
+  [[0, 79, 2], [2, 79, 2], [4, 77, 2], [6, 74, 2], [8, 72, 8]],
+];
 let theme = '';
 export function setTheme(t) { theme = t || ''; }
 
-function tempo() { return (mode === 'menu' ? 108 : mode === 'hurry' ? 168 : 138) - (theme === 'halloween' && mode !== 'hurry' ? 10 : 0); }
+function tempo() { return (mode === 'menu' ? 108 : mode === 'hurry' ? 168 : 138) - (theme === 'halloween' && mode !== 'hurry' ? 10 : 0) + (theme === 'newyear' ? 12 : 0); }
 
 function sched() {
   if (!ac || ac.state !== 'running') return;
@@ -112,9 +127,10 @@ function sched() {
 function playStep(s, t) {
   if (mode === 'off') return;
   const sx = 60 / tempo() / 4;
-  const hw = theme === 'halloween';
-  const bar = (s >> 4) % 8, st = s % 16, ch = (hw ? PROG_HW : PROG)[bar % 4];
-  const mel = (hw ? (bar < 4 ? MEL_HW_A : MEL_HW_B) : (bar < 4 ? MEL_A : MEL_B))[bar % 4];
+  const hw = theme === 'halloween', ny = theme === 'newyear';
+  const bar = (s >> 4) % 8, st = s % 16, ch = (hw ? PROG_HW : ny ? PROG_NY : PROG)[bar % 4];
+  const mel = (hw ? (bar < 4 ? MEL_HW_A : MEL_HW_B) : ny ? (bar < 4 ? MEL_NY_A : MEL_NY_B) : (bar < 4 ? MEL_A : MEL_B))[bar % 4];
+  if (ny && mode !== 'menu' && st % 2 === 1) hit(t, 0.05, 0.05, 9000, 'highpass', mus);
   const game = mode !== 'menu';
   if (st % 2 === 0) tone(t, mf(ch.root + (st % 4 === 2 ? 12 : 0)), sx * 1.8, 'triangle', 0.42, mus);
   if (game) tone(t, mf(ch.arp[st % 3] + (bar >= 4 ? 12 : 0)), sx * 0.8, p12, 0.045, mus);
@@ -181,6 +197,15 @@ export function sfx(name, vol = 1) {
       o.connect(g); g.connect(d); o.start(t); lfo.start(t); o.stop(t + 0.75); lfo.stop(t + 0.75);
       break;
     }
+    case 'chomp': tone(t, 520, 0.05, 'square', 0.07 * v, d, 300); break;
+    case 'power': [60, 64, 67, 72, 76].forEach((n, i) => tone(t + i * 0.05, mf(n), 0.08, 'square', 0.18 * v, d)); break;
+    case 'eat': tone(t, 300, 0.25, 'square', 0.22 * v, d, 1400); break;
+    case 'flagtake': [72, 76, 79].forEach((n, i) => tone(t + i * 0.07, mf(n), 0.1, p25, 0.25 * v, d)); break;
+    case 'capture': [72, 76, 79, 84, 88].forEach((n, i) => tone(t + i * 0.09, mf(n), 0.14, p25, 0.3, d)); break;
+    case 'jail': tone(t, 400, 0.3, 'square', 0.22 * v, d, 120); break;
+    case 'shove': hit(t, 0.12, 0.3 * v, 600, 'lowpass', d); tone(t, 180, 0.1, 'square', 0.15 * v, d, 90); break;
+    case 'gift': [84, 88, 91, 96].forEach((n, i) => tone(t + i * 0.06, mf(n), 0.12, 'triangle', 0.22 * v, d)); hit(t, 0.3, 0.06, 9000, 'highpass', d); break;
+    case 'seek': [57, 57, 60, 57].forEach((n, i) => tone(t + i * 0.15, mf(n), 0.14, 'square', 0.25, d)); break;
     case 'sudden': [0, 1, 2, 3].forEach(i => tone(t + i * 0.18, i % 2 ? 660 : 880, 0.14, 'square', 0.22, d)); break;
     case 'click': tone(t, 700, 0.05, p25, 0.15, d); break;
   }
