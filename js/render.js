@@ -129,6 +129,7 @@ function palette(map) {
   if (ty === 'pacman') return { grass: '#0a0a16', g1: '#0c0c1c', g2: '#09091a', tuft: null, chk: '#0a0a16' };
   if (isWinter(th)) return { grass: '#dfe8ee', g1: '#cfdbe4', g2: '#eef4f8', tuft: '#b8c8d4', chk: '#d2dde6', dirt: '#a8a096', snow: true };
   if (ty === 'magic') return { grass: '#3d5e55', g1: '#355449', g2: '#476b61', tuft: '#5f9a86', chk: '#3a5a51' };
+  if (ty === 'fort' && !isWinter(th)) return { grass: '#3f4d2c', g1: '#374428', g2: '#4a5a34', tuft: '#566a3a', chk: '#3b4829' };
   if (th === 'halloween') return { grass: '#474f2d', g1: '#3e4528', g2: '#525a33', tuft: '#5f6b3a', chk: '#424a2a' };
   if (ty === 'beach') return { grass: '#68783a', g1: '#5f6f34', g2: '#748640', tuft: '#84984a', chk: '#62723a' };
   return { grass: '#5b6b32', g1: '#52612d', g2: '#66783a', tuft: '#748a42', chk: '#56672f' };
@@ -161,6 +162,57 @@ function decor(g, kind, cx, cy, r) {
   } else {
     P(g, OL, cx - 4, cy - 6, 9, 11); P(g, '#8b5a2b', cx - 3, cy - 5, 7, 9); P(g, '#5a3b1e', cx - 3, cy - 3, 7, 1); P(g, '#5a3b1e', cx - 3, cy + 1, 7, 1); P(g, '#a8733e', cx - 3, cy - 5, 2, 9);
   }
+}
+
+// ---------- castle sprites ----------
+const LVL = [null,
+  { base: '#6d6a74', line: '#56535d', hi: '#827e8a', wall: '#55525c', wallHi: '#8a8694', carpet: '#8a1c24' },
+  { base: '#8a5e36', line: '#6a4426', hi: '#a47446', wall: '#5e4026', wallHi: '#9a7448', carpet: '#1c4a8a' },
+  { base: '#4a3a5e', line: '#3a2c4c', hi: '#6a5a80', wall: '#3c2e50', wallHi: '#7a68a0', carpet: '#8a1c24' },
+  { base: '#c8b878', line: '#b4a460', hi: '#ece0a4', wall: '#8a7a40', wallHi: '#f0e6b0', carpet: '#6a1c8a' },
+];
+function castleDecor(g, kind, cx, cy) {
+  P(g, 'rgba(0,0,0,.32)', cx - 6, cy + 4, 13, 3);
+  if (kind === 1) { // brazier
+    P(g, OL, cx - 4, cy - 1, 9, 7); P(g, '#3a3a44', cx - 3, cy, 7, 4); P(g, '#5a5a66', cx - 3, cy, 7, 1); P(g, '#ff7a2a', cx - 2, cy - 1, 5, 1); P(g, '#ffd23f', cx - 1, cy - 1, 3, 1);
+    P(g, OL, cx - 3, cy + 5, 2, 3); P(g, OL, cx + 2, cy + 5, 2, 3); P(g, '#2a2a30', cx - 2, cy + 5, 1, 2); P(g, '#2a2a30', cx + 2, cy + 5, 1, 2);
+  } else if (kind === 2) { // barrel
+    P(g, OL, cx - 5, cy - 6, 11, 12); P(g, '#8b5a2b', cx - 4, cy - 5, 9, 10); P(g, '#a8733e', cx - 4, cy - 5, 3, 10); P(g, '#5a3b1e', cx - 4, cy - 3, 9, 1); P(g, '#5a3b1e', cx - 4, cy + 2, 9, 1); P(g, '#3a3a44', cx - 4, cy - 6, 9, 1);
+  } else if (kind === 3) { // table
+    P(g, OL, cx - 7, cy - 5, 15, 10); P(g, '#6a3a1a', cx - 6, cy - 4, 13, 7); P(g, '#8a5a2a', cx - 6, cy - 4, 13, 1); P(g, '#e8e0c8', cx - 4, cy - 2, 3, 2); P(g, '#c8463d', cx + 1, cy - 2, 3, 3); P(g, '#ffd23f', cx + 5, cy - 3, 1, 3); P(g, '#ffe9a8', cx + 5, cy - 4);
+  } else if (kind === 4) { // statue
+    P(g, OL, cx - 5, cy + 1, 11, 6); P(g, '#7a7a84', cx - 4, cy + 2, 9, 4); P(g, OL, cx - 3, cy - 9, 7, 11); P(g, '#a4a4b0', cx - 2, cy - 8, 5, 9); P(g, '#cfcfdc', cx - 2, cy - 8, 2, 8);
+    P(g, '#8a8a96', cx - 1, cy - 11, 3, 3); P(g, OL, cx - 1, cy - 6); P(g, OL, cx + 1, cy - 6); P(g, '#7a7a84', cx + 3, cy - 6, 1, 7); P(g, '#e8e8f4', cx + 3, cy - 10, 1, 4);
+  } else if (kind === 5) { // chest
+    P(g, OL, cx - 6, cy - 4, 13, 10); P(g, '#7a4a22', cx - 5, cy - 3, 11, 8); P(g, '#a8733e', cx - 5, cy - 3, 11, 3); P(g, '#3a3a44', cx - 5, cy - 1, 11, 1); P(g, '#ffd23f', cx - 1, cy - 1, 3, 3); P(g, OL, cx, cy, 1, 1);
+  } else if (kind === 6) { // throne
+    P(g, OL, cx - 8, cy - 12, 17, 18); P(g, '#7a1020', cx - 7, cy - 11, 15, 16); P(g, '#a01830', cx - 6, cy - 10, 13, 8); P(g, '#ffd23f', cx - 8, cy - 12, 17, 2); P(g, '#ffd23f', cx - 8, cy - 12, 2, 18); P(g, '#ffd23f', cx + 7, cy - 12, 2, 18);
+    P(g, '#c01838', cx - 5, cy - 2, 11, 5); P(g, '#ffd23f', cx - 7, cy + 4, 15, 2); P(g, '#e23b5a', cx - 1, cy - 8, 3, 3);
+  } else { // bookshelf
+    P(g, OL, cx - 6, cy - 7, 13, 14); P(g, '#5a3b1e', cx - 5, cy - 6, 11, 12); P(g, '#3a2410', cx - 5, cy - 1, 11, 1);
+    const cols = ['#c8463d', '#3f7fc4', '#d9a63a', '#4f9a45', '#8e58b0', '#e8dcc0'];
+    for (let r2 = 0; r2 < 2; r2++) for (let i = 0; i < 5; i++) P(g, cols[(i * 3 + r2 * 2 + cx) % 6], cx - 5 + i * 2 + 1, cy - 6 + r2 * 6, 2, 5);
+  }
+}
+// steps climbing toward direction d (0 +x, 1 +y, 2 -x, 3 -y): dark at the foot, bright at the top
+function stairsDraw(g, px, py, d) {
+  P(g, '#3a3640', px, py, TS, TS);
+  const horiz = d % 2 === 0, sgn = d < 2 ? 1 : -1;
+  for (let k = 0; k < 4; k++) {
+    const a = sgn > 0 ? k * 4 : (3 - k) * 4, shadeK = 0.1 + k * 0.1;
+    const c1 = shade('#8a857e', shadeK - 0.3), c2 = shade('#cfc9be', shadeK - 0.35);
+    if (horiz) { P(g, c1, px + a, py, 4, TS); P(g, c2, px + a + (sgn > 0 ? 2 : 0), py, 2, TS); P(g, '#2a2630', px + a + (sgn > 0 ? 0 : 3), py, 1, TS); }
+    else { P(g, c1, px, py + a, TS, 4); P(g, c2, px, py + a + (sgn > 0 ? 2 : 0), TS, 2); P(g, '#2a2630', px, py + a + (sgn > 0 ? 0 : 3), TS, 1); }
+  }
+  P(g, '#6a6460', horiz ? px : px, horiz ? py : py, horiz ? TS : 1, horiz ? 1 : TS); P(g, '#6a6460', horiz ? px : px + 15, horiz ? py + 15 : py, horiz ? TS : 1, horiz ? 1 : TS);
+}
+// animated flame above a brazier
+function flame(g, x, y, t, seed) {
+  const f = Math.floor(t * 12 + seed) % 3, h = [4, 6, 5][f], w = [2, 3, 2][f];
+  g.globalAlpha = 0.9;
+  P(g, '#ff5a1f', x - w, y - h, w * 2 + 1, h); P(g, '#ff9a2a', x - w + 1, y - h + 1, w * 2 - 1, h - 1); P(g, '#ffe36a', x, y - h + 2, 1, h - 3);
+  P(g, '#ff7a2a', x - 3 + f, y - h - 1, 1, 1);
+  g.globalAlpha = 1;
 }
 
 export function buildLayers(map, seed) {
@@ -213,8 +265,7 @@ export function buildLayers(map, seed) {
         for (let i = 0; i < 10; i++) P(g, '#7a6a2c', px + ri(0, 15), py + ri(0, 15));
         break;
       case T.STAIRS:
-        P(g, '#5a5650', px, py, TS, TS);
-        for (let k = 0; k < 4; k++) { P(g, '#8a857e', px, py + k * 4, TS, 3); P(g, '#a39e96', px, py + k * 4, TS, 1); }
+        if (map.stair[y * MW + x] > 0) P(g, '#3a3640', px, py, TS, TS); else stairsDraw(g, px, py, map.stairD[y * MW + x]);
         break;
       case T.FLOOR:
         if (pac) { P(g, '#1a0f2a', px, py, TS, TS); break; }
@@ -303,7 +354,8 @@ export function buildLayers(map, seed) {
       P(g, '#8a8a92', px + 5, py + 2, 6, 10); P(g, win ? '#f4f8fb' : '#a4a4ac', px + 5, py + 2, 6, win ? 2 : 1); P(g, '#6e6e76', px + 10, py + 3, 1, 9);
       P(g, '#5f5f68', px + 7, py + 4, 2, 6); P(g, '#5f5f68', px + 6, py + 5, 4, 1);
     }
-    if (t === T.DECOR) { if (ty === 'neon') neonDecor(g, NEON_DECOR[(x * 7 + y * 13) % 4], px + 8, py + 9); else decor(g, decoKind, px + 8, py + 9, r); }
+    if (t === T.DECOR && map.deco[y * MW + x]) { if (!map.lvl[y * MW + x]) castleDecor(g, map.deco[y * MW + x], px + 8, py + 9); }
+    else if (t === T.DECOR) { if (ty === 'neon') neonDecor(g, NEON_DECOR[(x * 7 + y * 13) % 4], px + 8, py + 9); else decor(g, decoKind, px + 8, py + 9, r); }
     if (t === T.MUSH) {
       for (let k = 0; k < 2 + ri(0, 1); k++) {
         const mx = px + ri(3, 12), my = py + ri(6, 13), magic = ty === 'magic';
@@ -313,6 +365,7 @@ export function buildLayers(map, seed) {
       }
     }
     if (map.up[y * MW + x]) P(g, 'rgba(0,0,0,.3)', px, py, TS, TS);
+    else if (ty === 'fort' && y > 0 && map.lvl[(y - 1) * MW + x] > 0) { P(g, 'rgba(0,0,0,.28)', px, py, TS, 6); P(g, 'rgba(0,0,0,.14)', px, py + 6, TS, 4); }
   }
   for (let y = 0; y < MH - 1; y++) for (let x = 0; x < MW; x++)
     if ((at(x, y) === T.WALL || at(x, y) === T.HEDGE) && at(x, y + 1) !== at(x, y) && !pac) P(g, 'rgba(0,0,0,.25)', x * TS, (y + 1) * TS, TS, 3);
@@ -375,24 +428,51 @@ export function buildLayers(map, seed) {
     }
   }
 
-  // upper floor (two-storey maps)
+  // decks of the multi-storey castle
   let hasUp = false;
+  const lvlAt = (x, y) => (x < 0 || y < 0 || x >= MW || y >= MH) ? 0 : map.lvl[y * MW + x];
   for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
-    if (!upAt(x, y)) continue;
+    const i = y * MW + x, L = map.lvl[i];
+    if (!L || !upAt(x, y)) continue;
     hasUp = true;
-    const px = x * TS, py = y * TS;
-    P(u, '#9a7650', px, py, TS, TS);
-    for (let k = 0; k < 4; k++) { P(u, '#7d5f3c', px, py + k * 4 + 3, TS, 1); P(u, '#ad8a60', px + ((x * 5 + k * 7) % 14), py + k * 4, 2, 1); }
-    if (win) for (let i = 0; i < 4; i++) P(u, '#eef4f8', px + ri(0, 14), py + ri(0, 14), 2, 1);
-    const open = (xx, yy) => upAt(xx, yy) || at(xx, yy) === T.STAIRS;
-    if (!open(x, y - 1)) { P(u, '#4a3420', px, py, TS, 2); P(u, '#6e5232', px, py + 2, TS, 1); }
-    if (!open(x, y + 1)) { P(u, '#4a3420', px, py + 13, TS, 3); P(g, '#3a2a18', px + 1, py + 16, 2, 6); P(g, '#3a2a18', px + 13, py + 16, 2, 6); }
-    if (!open(x - 1, y)) P(u, '#4a3420', px, py, 2, TS);
-    if (!open(x + 1, y)) P(u, '#4a3420', px + 14, py, 2, TS);
+    const px = x * TS, py = y * TS, pl = LVL[L] || LVL[1], tt = at(x, y);
+    if (tt === T.STAIRS) { stairsDraw(u, px, py, map.stairD[i]); continue; }
+    // floor
+    P(u, pl.base, px, py, TS, TS);
+    if (L === 1) { for (let k = 0; k < 2; k++) { P(u, pl.line, px, py + k * 8 + 7, TS, 1); P(u, pl.line, px + ((k * 5 + x * 3 + y) % 2 ? 4 : 11), py + k * 8, 1, 8); } }
+    else if (L === 2) { for (let k = 0; k < 4; k++) { P(u, pl.line, px, py + k * 4 + 3, TS, 1); P(u, pl.hi, px + ((x * 5 + k * 7) % 12), py + k * 4, 3, 1); } }
+    else if (L === 3) { P(u, pl.line, px, py, TS, 1); P(u, pl.line, px, py, 1, TS); for (let k = 0; k < 3; k++) P(u, pl.hi, px + ri(2, 13), py + ri(2, 13), 2, 1); }
+    else { P(u, pl.line, px, py, TS, 1); P(u, pl.line, px, py, 1, TS); P(u, pl.hi, px + 1, py + 1, 6, 1); P(u, pl.hi, px + 9, py + 9, 6, 1); P(u, pl.line, px + 7, py + 7, 2, 2); }
+    for (let k = 0; k < 3; k++) P(u, r() < 0.5 ? pl.line : pl.hi, px + ri(0, 15), py + ri(0, 15));
+    if (L === 1 && r() < 0.18) P(u, '#4a6a3a', px + ri(0, 13), py + ri(0, 14), 2, 1);   // moss
+    if (win) for (let k = 0; k < 4; k++) P(u, '#eef4f8', px + ri(0, 14), py + ri(0, 14), 2, 1);
+    // carpet
+    if (map.fstyle[i]) {
+      const cs = (xx, yy) => map.fstyle[yy * MW + xx] && lvlAt(xx, yy) === L;
+      P(u, pl.carpet, px, py, TS, TS); P(u, shade(pl.carpet, 0.15), px + 3, py + 3, 10, 10); P(u, shade(pl.carpet, -0.3), px + 6, py + 6, 4, 4);
+      if (!cs(x, y - 1)) P(u, '#e0b252', px, py, TS, 1); if (!cs(x, y + 1)) P(u, '#e0b252', px, py + 15, TS, 1);
+      if (!cs(x - 1, y)) P(u, '#e0b252', px, py, 1, TS); if (!cs(x + 1, y)) P(u, '#e0b252', px + 15, py, 1, TS);
+    }
+    // walls built on the deck
+    if (tt === T.WALL) {
+      P(u, pl.wall, px, py, TS, TS);
+      for (let row = 0; row < 3; row++) { P(u, shade(pl.wall, -0.3), px, py + row * 5 + 4, TS, 1); const off = row % 2 ? 0 : 4; P(u, shade(pl.wall, -0.3), px + off, py + row * 5, 1, 4); P(u, shade(pl.wall, -0.3), px + off + 8, py + row * 5, 1, 4); }
+      for (let k = 0; k < 6; k++) P(u, r() < 0.5 ? shade(pl.wall, 0.12) : shade(pl.wall, -0.15), px + ri(0, 15), py + ri(0, 15));
+      if (at(x, y - 1) !== T.WALL) P(u, pl.wallHi, px, py, TS, 3);
+      if (at(x, y + 1) !== T.WALL) { P(u, shade(pl.wall, -0.35), px, py + 12, TS, 4); P(u, 'rgba(0,0,0,.3)', px, py + 16 - 1, TS, 1); if ((x * 7 + y * 3) % 5 === 0) { const bc = ['#a01830', '#2f4fa8', '#2a7a3a'][(x + y) % 3]; P(u, OL, px + 4, py + 2, 8, 12); P(u, bc, px + 5, py + 3, 6, 10); P(u, '#e0b252', px + 7, py + 5, 2, 4); P(u, bc, px + 5, py + 13, 2, 2); P(u, bc, px + 9, py + 13, 2, 2); } }
+      if (at(x - 1, y) !== T.WALL) P(u, shade(pl.wall, -0.2), px, py, 1, TS);
+      if (at(x + 1, y) !== T.WALL) P(u, shade(pl.wall, -0.2), px + 15, py, 1, TS);
+    } else if (tt === T.DECOR && map.deco[i]) castleDecor(u, map.deco[i], px + 8, py + 9);
+    // cliff edges: a front face where the next tile lies lower, thin rims elsewhere
+    const lo = (xx, yy) => at(xx, yy) !== T.STAIRS && lvlAt(xx, yy) < L;
+    if (lo(x, y + 1)) { const diff = L - lvlAt(x, y + 1), hb = Math.min(8, 3 + diff * 2); P(u, '#2a2630', px, py + TS - hb, TS, hb); P(u, '#4a4654', px, py + TS - hb, TS, 1); for (let k = 0; k < hb; k += 3) P(u, '#1c1822', px + ((k * 5) % 12), py + TS - hb + k, 4, 1); }
+    if (lo(x, y - 1)) { P(u, pl.hi, px, py, TS, 1); P(u, '#2a2630', px, py + 1, TS, 1); }
+    if (lo(x - 1, y)) { P(u, '#2a2630', px, py, 2, TS); P(u, pl.hi, px + 2, py, 1, TS); }
+    if (lo(x + 1, y)) { P(u, '#2a2630', px + 14, py, 2, TS); P(u, pl.hi, px + 13, py, 1, TS); }
   }
 
   const MC = { [T.GRASS]: pal.grass, [T.DIRT]: pal.dirt || '#7a6040', [T.WALL]: pac ? '#2d5bff' : '#9a958e', [T.WATER]: '#2f5f7c', [T.BUSH]: '#2f5022', [T.ICE]: '#a9d3e3', [T.TREE]: '#2b4220', [T.FLOOR]: '#7d5f3c', [T.PORTAL]: '#b07cff', [T.HEDGE]: '#2e4a22', [T.ROAD]: '#877c68', [T.BRIDGE]: '#8b6a42', [T.TOMB]: '#8a8a92', [T.WHEAT]: '#b8963a', [T.DECOR]: '#d9772e', [T.SAND]: '#d9c48a', [T.MUSH]: pal.grass, [T.STAIRS]: '#8a857e' };
-  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) P(mm, upAt(x, y) ? '#9a7650' : map.belt[y * MW + x] >= 0 ? '#c9a23a' : MC[at(x, y)], x, y);
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) P(mm, upAt(x, y) ? ['#6d6a74', '#8a5e36', '#4a3a5e', '#c8b878'][Math.max(0, map.lvl[y * MW + x] - 1)] : map.belt[y * MW + x] >= 0 ? '#c9a23a' : MC[at(x, y)], x, y);
   return { ground, over, upper: hasUp ? upper : null, mini, lights };
 }
 
@@ -730,7 +810,7 @@ export class Renderer {
     // footprints in snow
     if (win) {
       for (const p of v.players) {
-        if (!p.alive || p.z === 1) continue;
+        if (!p.alive || p.z > 0) continue;
         const lp = this.lastPrint.get(p.id);
         if (!lp || Math.hypot(lp[0] - p.x, lp[1] - p.y) > 30) { this.lastPrint.set(p.id, [p.x, p.y, 0]); continue; }
         if (Math.hypot(lp[0] - p.x, lp[1] - p.y) > 6) {
@@ -813,14 +893,15 @@ export class Renderer {
     }
     for (const it of v.items) drawItem(g, it.k, it.x, it.y, t);
     for (const gf of v.gifts) drawGift(g, gf.x, gf.y, gf.c, t);
-    for (const r of v.runes) {
+    const drawRune = r => {
       const b = Math.round(Math.sin(t * 3 + r.id) * 1.2), col = RUNES[r.k].col, gold = r.k === 'gold';
       g.globalAlpha = (gold ? 0.35 : 0.18) + 0.1 * Math.sin(t * 5 + r.id); disc(g, col, r.x, r.y - 4 + b, gold ? 10 : 7); g.globalAlpha = 1;
       P(g, 'rgba(0,0,0,.3)', r.x - 3, r.y + 1, 7, 2);
       P(g, OL, r.x - 4, r.y - 9 + b, 9, 10); P(g, gold ? '#8a6a1a' : '#4b4a55', r.x - 3, r.y - 8 + b, 7, 8); P(g, gold ? '#c9a23a' : '#62606e', r.x - 3, r.y - 8 + b, 7, 1);
       drawGlyph(g, r.k, r.x - 2, r.y - 7 + b, col);
       if (gold && Math.random() < 0.15) this.parts.push({ x: r.x + (Math.random() - 0.5) * 12, y: r.y - 6, vx: 0, vy: -15, life: 0.6, max: 0.6, col: '#ffe08a', size: 1 });
-    }
+    };
+    for (const r of v.runes) if (!r.z) drawRune(r);
     for (const b of v.bombs) {
       const pulse = b.t < 0.7 ? Math.floor(t * 16) % 2 : Math.floor(t * 5) % 2;
       drawBomb(g, b.x, b.y + 1, t, pulse);
@@ -848,7 +929,7 @@ export class Renderer {
       if (reveal) return false;
       if (p.fx && p.fx.invis > 0) return true;
       const far = !me || Math.hypot(me.x - p.x, me.y - p.y) > 28;
-      return (inHide(p) && (far || p.hero === 'ninja')) || (underUp(p) && me && (me.z || 0) === 1 && far);
+      return (inHide(p) && (far || p.hero === 'ninja')) || (underUp(p) && me && (me.z || 0) > 0 && far);
     };
     const ents = [];
     for (const p of v.players) if (p.alive) ents.push(p);
@@ -913,7 +994,7 @@ export class Renderer {
         this.parts.push({ x: p.x - p.fdx * 5 + (Math.random() - 0.5) * 5, y: p.y - 3 + (Math.random() - 0.5) * 4, vx: (Math.random() - 0.5) * 6, vy: trail === 'bubbles' ? -12 : trail === 'leaves' || trail === 'snow' ? 6 : -4, life: 0.7, max: 0.7, col, size: trail === 'hearts' || trail === 'bubbles' ? 2 : 1 });
       } else if (p.m && Math.random() < 0.08) this.parts.push({ x: p.x, y: p.y, vx: (Math.random() - 0.5) * 10, vy: -5, life: 0.4, max: 0.4, col: win ? '#ffffffaa' : '#c8b89a88', size: 1 });
     };
-    const low = ents.filter(p => (p.z || 0) === 0 && !p.stairs), high = ents.filter(p => (p.z || 0) === 1 || p.stairs);
+    const low = ents.filter(p => (p.z || 0) === 0 && !p.stairs), high = ents.filter(p => (p.z || 0) >= 1 || p.stairs);
     for (const p of low) drawEnt(p);
 
     g.globalAlpha = me && me.alive && inHide(me) ? 0.55 : 1;
@@ -925,6 +1006,15 @@ export class Renderer {
       g.globalAlpha = 1;
     }
     for (const p of high) drawEnt(p);
+    for (const r of v.runes) if (r.z) drawRune(r);
+    // braziers: living flames and rising embers
+    if (map.torches && map.torches.length) {
+      for (const [tx0, ty0] of map.torches) {
+        if (tx0 < cx - 16 || tx0 > cx + vw + 16 || ty0 < cy - 24 || ty0 > cy + vh + 24) continue;
+        flame(g, tx0, ty0 - 3, t, tx0 * 0.13 + ty0);
+        if (Math.random() < dt * 3) this.parts.push({ x: tx0 + (Math.random() - 0.5) * 5, y: ty0 - 6, vx: (Math.random() - 0.5) * 8, vy: -16 - Math.random() * 10, life: 1.1, max: 1.1, col: Math.random() < 0.5 ? '#ff9a2a' : '#ffd23f', size: 1 });
+      }
+    }
 
     // flags lying on the ground
     if (ctf && v.flags) for (let tm = 0; tm < 2; tm++) { const f = v.flags[tm]; if (!f.carrier) drawFlag(g, Math.round(f.x), Math.round(f.y), tm, t); }
@@ -1020,6 +1110,7 @@ export class Renderer {
       for (const p of v.players) if (p.alive && p.it) cones.push(p);
       if (me && me.it && v.hideT > 0) dark = { col: '0,0,0', a: 1, r: 0 };
     }
+    if (!dark && map.torches && map.torches.length && v.mode !== 'hide') dark = { col: '14,8,30', a: 0.6, r: 135, torch: true };
     if (v.mode === 'dm') { dark = { col: '4,1,10', a: 0.95, r: 26 }; for (const p of v.players) if (p.alive) cones.push(p); }
     if (me && me.fx && me.fx.blind > 0) dark = { col: '10,6,16', a: 0.96, r: 36 };
     if (dark) {
@@ -1030,6 +1121,7 @@ export class Renderer {
       d.globalCompositeOperation = 'destination-out';
       const lights = [];
       if (me && (me.alive || me.ghost || dm) && dark.r) lights.push([me.x, me.y - 6, me.alive || !dm ? dark.r : 60]);
+      if (dark.torch) for (const [tx0, ty0] of map.torches) if (tx0 > cx - 70 && tx0 < cx + vw + 70 && ty0 > cy - 70 && ty0 < cy + vh + 70) lights.push([tx0, ty0 - 4, 54 + Math.sin(t * 9 + tx0) * 3]);
       if (ev === 'night') {
         for (const p of v.players) if (p.alive && p.it && p !== me) lights.push([p.x, p.y - 6, 22]);
         for (const r of v.runes) lights.push([r.x, r.y - 4, 14]);

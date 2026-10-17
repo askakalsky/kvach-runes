@@ -219,8 +219,9 @@ export class Renderer3D {
     const th = map.theme, win = isWinter(th), pac = map.type === 'pacman', hw = th === 'halloween';
     const tx = textures();
     const W = new THREE.Group(); this.world = W; this.scene.add(W);
-    this.scene.background = new THREE.Color(pac || map.type === 'neon' ? '#0a0612' : hw ? '#1a1024' : win ? '#c8d8e6' : map.type === 'magic' ? '#24303a' : '#9ec4de');
-    this.base = { amb: pac ? 0.9 : hw ? 0.8 : 1.4, sun: pac ? 0.6 : hw ? 0.9 : 1.8, ambCol: hw ? '#b8a0ff' : map.type === 'magic' ? '#a8d8ff' : '#ffffff' };
+    this.scene.background = new THREE.Color(map.type === 'fort' && !win ? '#21173a' : pac || map.type === 'neon' ? '#0a0612' : hw ? '#1a1024' : win ? '#c8d8e6' : map.type === 'magic' ? '#24303a' : '#9ec4de');
+    this.dusk = map.type === 'fort' && !win && !hw;
+    this.base = { amb: this.dusk ? 0.85 : pac ? 0.9 : hw ? 0.8 : 1.4, sun: this.dusk ? 0.9 : pac ? 0.6 : hw ? 0.9 : 1.8, ambCol: this.dusk ? '#9a88d0' : hw ? '#b8a0ff' : map.type === 'magic' ? '#a8d8ff' : '#ffffff' };
 
     // ground: reuse the pixel-art ground from the 2D renderer
     const gt = new THREE.CanvasTexture(layers2d.ground);
@@ -279,6 +280,7 @@ export class Renderer3D {
     // decor objects
     const decoKind = map.type === 'neon' ? 'neon' : hw || map.type === 'graveyard' ? 'pumpkin' : win ? 'snowman' : map.type === 'beach' ? 'umbrella' : map.type === 'magic' ? 'crystal' : 'barrel';
     for (const i of tiles[T.DECOR] || []) {
+      if (map.deco[i]) continue;
       const x = i % MW + 0.5, y = ((i / MW) | 0) + 0.5, d = new THREE.Group();
       if (decoKind === 'pumpkin') { const p = new THREE.Mesh(SPH, lam('#d9772e', { emissive: '#5a2a00' })); p.scale.set(0.7, 0.55, 0.7); p.position.y = 0.28; d.add(p, box(0.06, 0.15, 0.06, lam('#4a6b2a'), 0, 0.6, 0)); }
       else if (decoKind === 'snowman') { for (const [r, h] of [[0.6, 0.3], [0.45, 0.75], [0.32, 1.1]]) { const s2 = new THREE.Mesh(SPH, lam('#f4f8fb')); s2.scale.setScalar(r); s2.position.y = h; d.add(s2); } d.add(box(0.08, 0.06, 0.2, lam('#ff8a2a'), 0, 1.1, 0.2)); d.add(box(0.3, 0.25, 0.3, lam('#2a2a2a'), 0, 1.35, 0)); }
@@ -293,18 +295,82 @@ export class Renderer3D {
       const cap = new THREE.Mesh(SPH, lam(magic ? ['#5ad0d0', '#c85aa8', '#9a7aff'][i % 3] : '#c8463d', magic ? { emissive: '#204a4a' } : undefined));
       cap.scale.set(0.3, 0.16, 0.3); cap.position.set(x + 0.15, 0.25, y); W.add(cap, box(0.07, 0.2, 0.07, lam('#e8dcc0'), x + 0.15, 0.1, y));
     }
-    // stairs and upper floor
-    const stairs = tiles[T.STAIRS] || [];
-    if (stairs.length) {
-      const mesh = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: tx.stone }), stairs.length * 3);
-      stairs.forEach((i, k) => { for (let st = 0; st < 3; st++) place(mesh, k * 3 + st, i % MW + 0.5, 0.2 + st * 0.4, ((i / MW) | 0) + 0.5, 1, 0.4, 1 - st * 0.3); });
-      mesh.instanceMatrix.needsUpdate = true; W.add(mesh);
+    // decks of the multi-storey castle: slabs, cliff faces, stairs, wall tops
+    const LH = 1.4, nlv = i => i < 0 || i >= MW * MH ? 0 : map.lvl[i];
+    this.deckMats = [];
+    const deckTex = L => canvasTex((g2, P) => {
+      const base = ['', '#6d6a74', '#8a5e36', '#4a3a5e', '#c8b878'][L], line = ['', '#56535d', '#6a4426', '#3a2c4c', '#b4a460'][L], hi = ['', '#827e8a', '#a47446', '#6a5a80', '#ece0a4'][L];
+      P(base, 0, 0, 16, 16);
+      if (L === 2) for (let k = 0; k < 4; k++) { P(line, 0, k * 4 + 3, 16, 1); P(hi, (k * 5) % 12, k * 4, 3, 1); }
+      else { P(line, 0, 0, 16, 1); P(line, 0, 0, 1, 16); noise(P, [line, hi], 12); }
+    });
+    const carpetTex = L => canvasTex((g2, P) => {
+      const c0 = ['', '#8a1c24', '#1c4a8a', '#8a1c24', '#6a1c8a'][L];
+      P(c0, 0, 0, 16, 16); P('#e0b252', 0, 0, 16, 1); P('#e0b252', 0, 15, 16, 1); P('#ffffff22', 3, 3, 10, 10);
+    });
+    for (let L = 1; L <= 4; L++) {
+      const ups = []; for (let i = 0; i < MW * MH; i++) if (map.lvl[i] === L && map.up[i] && map.g[i] !== T.STAIRS) ups.push(i);
+      if (!ups.length) continue;
+      const mat = new THREE.MeshLambertMaterial({ map: deckTex(L), transparent: true, opacity: 1 });
+      this.deckMats.push(mat);
+      this.upMesh = inst(ups, mat, (m, k, x, y) => place(m, k, x + 0.5, L * LH - 0.1, y + 0.5, 1, 0.2, 1));
+      const car = ups.filter(i => map.fstyle[i] && map.g[i] !== T.WALL && map.g[i] !== T.DECOR);
+      if (car.length) { const cm = new THREE.MeshLambertMaterial({ map: carpetTex(L), transparent: true, opacity: 1 }); this.deckMats.push(cm); inst(car, cm, (m, k, x, y) => place(m, k, x + 0.5, L * LH + 0.01, y + 0.5, 0.96, 0.03, 0.96)); }
     }
-    const ups = []; for (let i = 0; i < MW * MH; i++) if (map.up[i]) ups.push(i);
-    this.upMat = new THREE.MeshLambertMaterial({ map: tx.plank, transparent: true, opacity: 1 });
-    this.upMesh = inst(ups, this.upMat, (m, k, x, y) => place(m, k, x + 0.5, 1.3, y + 0.5, 1, 0.16, 1));
-    const posts = ups.filter(i => !map.up[i + MW] && map.g[i + MW] !== T.STAIRS);
-    inst(posts, lam('#4a3420'), (m, k, x, y) => place(m, k, x + 0.5, 0.65, y + 0.9, 0.12, 1.3, 0.12));
+    // cliff faces under every deck edge that borders lower ground
+    { const faces = [];
+      for (let i = 0; i < MW * MH; i++) {
+        const L = map.lvl[i]; if (!L || map.g[i] === T.STAIRS) continue;
+        const x = i % MW, y = (i / MW) | 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const ni = (y + dy) * MW + x + dx;
+          if (x + dx < 0 || y + dy < 0 || x + dx >= MW || y + dy >= MH || map.g[ni] === T.STAIRS) continue;
+          const nl = nlv(ni); if (nl >= L) continue;
+          faces.push([x + 0.5 + dx * 0.46, y + 0.5 + dy * 0.46, dx, dy, nl * LH, L * LH - 0.2]);
+        }
+      }
+      if (faces.length) {
+        const mesh = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: tx.stone, color: '#9a96a8' }), faces.length);
+        faces.forEach(([fx, fz, dx, dy, y0, y1], k) => place(mesh, k, fx, (y0 + y1) / 2, fz, dx ? 0.1 : 1, y1 - y0, dx ? 1 : 0.1));
+        mesh.instanceMatrix.needsUpdate = true; W.add(mesh);
+      } }
+    // stairs: four steps climbing toward the upper deck
+    { const st = []; for (let i = 0; i < MW * MH; i++) if (map.stair[i] >= 0 && map.g[i] === T.STAIRS) st.push(i);
+      if (st.length) {
+        const mesh = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: tx.stone, color: '#b8b4c4' }), st.length * 4);
+        const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+        st.forEach((i, k) => {
+          const lo = map.stair[i], [dx, dy] = DIRS[map.stairD[i]], cx0 = i % MW + 0.5, cz0 = ((i / MW) | 0) + 0.5;
+          for (let s2 = 0; s2 < 4; s2++) {
+            const top = lo * LH + (s2 + 1) * LH / 4, off = -0.375 + s2 * 0.25;
+            place(mesh, k * 4 + s2, cx0 + dx * off, top / 2, cz0 + dy * off, dx ? 0.25 : 1, top, dx ? 1 : 0.25);
+          }
+        });
+        mesh.instanceMatrix.needsUpdate = true; W.add(mesh);
+      } }
+    // walls standing on decks
+    { const dw = []; for (let i = 0; i < MW * MH; i++) if (map.lvl[i] > 0 && map.g[i] === T.WALL) dw.push(i);
+      const cols = ['', '#aaa6b4', '#c49a6a', '#9a88c0', '#e8d890'];
+      if (dw.length) inst(dw, new THREE.MeshLambertMaterial({ map: tx.stone }), (m, k, x, y, i) => place(m, k, x + 0.5, map.lvl[i] * LH + 0.65, y + 0.5, 1, 1.3, 1), i => cols[map.lvl[i]]); }
+    // castle furniture and braziers
+    this.flames3 = []; this.torchPos = [];
+    for (let i = 0; i < MW * MH; i++) {
+      if (map.g[i] !== T.DECOR || !map.deco[i]) continue;
+      const kind = map.deco[i], x = i % MW + 0.5, z0 = ((i / MW) | 0) + 0.5, y0 = map.lvl[i] * LH, d = new THREE.Group();
+      if (kind === 1) {
+        const bowl = new THREE.Mesh(CYL, lam('#3a3a44')); bowl.scale.set(0.5, 0.3, 0.5); bowl.position.y = 0.55;
+        const leg = new THREE.Mesh(CYL, lam('#2a2a30')); leg.scale.set(0.15, 0.45, 0.15); leg.position.y = 0.22;
+        const fl = new THREE.Mesh(CONE, new THREE.MeshBasicMaterial({ color: '#ff9a2a' })); fl.scale.set(0.4, 0.8, 0.4); fl.position.y = 1.0;
+        const fl2 = new THREE.Mesh(CONE, new THREE.MeshBasicMaterial({ color: '#ffe36a' })); fl2.scale.set(0.22, 0.5, 0.22); fl2.position.y = 0.9;
+        d.add(leg, bowl, fl, fl2); this.flames3.push({ a: fl, b: fl2, ph: i * 0.37 }); this.torchPos.push([x, y0 + 1.1, z0]);
+      } else if (kind === 2) { const b2 = new THREE.Mesh(CYL, lam('#8b5a2b')); b2.scale.set(0.62, 0.8, 0.62); b2.position.y = 0.4; d.add(b2, box(0.66, 0.05, 0.66, lam('#3a3a44'), 0, 0.55, 0)); }
+      else if (kind === 3) { d.add(box(0.9, 0.08, 0.7, lam('#8a5a2a'), 0, 0.5, 0), box(0.08, 0.5, 0.08, lam('#5a3b1e'), -0.38, 0.25, -0.28), box(0.08, 0.5, 0.08, lam('#5a3b1e'), 0.38, 0.25, 0.28), box(0.2, 0.12, 0.2, lam('#c8463d'), 0.2, 0.6, 0)); }
+      else if (kind === 4) { const hd = new THREE.Mesh(SPH, lam('#a4a4b0')); hd.scale.setScalar(0.3); hd.position.y = 1.35; d.add(box(0.8, 0.25, 0.8, lam('#7a7a84'), 0, 0.12, 0), box(0.4, 0.8, 0.3, lam('#a4a4b0'), 0, 0.65, 0), hd, box(0.08, 0.7, 0.08, lam('#e8e8f4'), 0.3, 0.8, 0.1)); }
+      else if (kind === 5) { d.add(box(0.8, 0.4, 0.55, lam('#7a4a22'), 0, 0.2, 0), box(0.82, 0.12, 0.57, lam('#a8733e'), 0, 0.45, 0), box(0.12, 0.14, 0.04, lam('#ffd23f', { emissive: '#4a3a00' }), 0, 0.35, 0.29)); }
+      else if (kind === 6) { d.add(box(0.95, 0.3, 0.8, lam('#ffd23f', { emissive: '#3a2a00' }), 0, 0.15, 0), box(0.8, 0.6, 0.55, lam('#a01830'), 0, 0.6, 0.05), box(0.95, 1.5, 0.15, lam('#7a1020'), 0, 1.05, -0.35), box(1.0, 0.12, 0.2, lam('#ffd23f', { emissive: '#3a2a00' }), 0, 1.85, -0.35)); }
+      else { d.add(box(0.9, 1.3, 0.35, lam('#5a3b1e'), 0, 0.65, 0)); for (let r2 = 0; r2 < 3; r2++) d.add(box(0.8, 0.14, 0.05, lam(['#c8463d', '#3f7fc4', '#d9a63a'][r2]), 0, 0.3 + r2 * 0.35, 0.2)); }
+      d.position.set(x, y0, z0); W.add(d);
+    }
     // portals
     this.portals = [];
     for (const pr of map.portals) for (const i of pr) {
@@ -387,7 +453,16 @@ export class Renderer3D {
 
     // camera: fixed angle, follows the focus pawn
     const portrait = innerHeight > innerWidth;
-    const fx = focus ? U(focus.x) : MW / 2, fz = focus ? U(focus.y) : MH / 2, fy = focus && focus.z === 1 ? 1.4 : 0;
+    const heightOf = p => {
+      if (!p) return 0;
+      if (p.stairs) {
+        const tx = Math.floor(p.x / TS), ty = Math.floor(p.y / TS), i = ty * MW + tx, lo = map.stair[i];
+        if (lo >= 0) { const d = map.stairD[i], fxp = (p.x - tx * TS) / TS, fyp = (p.y - ty * TS) / TS, f = d === 0 ? fxp : d === 2 ? 1 - fxp : d === 1 ? fyp : 1 - fyp; return (lo + f) * 1.4; }
+      }
+      return (p.z || 0) * 1.4;
+    };
+    this.heightOf = heightOf;
+    const fx = focus ? U(focus.x) : MW / 2, fz = focus ? U(focus.y) : MH / 2, fy = heightOf(focus);
     const tgt = new THREE.Vector3(fx, fy, fz);
     if (!this.camInit) { this.cam.copy(tgt); this.camInit = true; }
     this.cam.lerp(tgt, Math.min(1, dt * 8));
@@ -411,19 +486,27 @@ export class Renderer3D {
     if (me && me.fx && me.fx.blind > 0) { amb = 0.03; sun = 0; myL = 1.2; }
     if (hiding && me && me.it && v.hideT > 0) { amb = 0; myL = 0; }
     this.amb.intensity = amb; this.amb.color.set(this.base.ambCol); this.sun.intensity = sun;
+    if (!fog && this.dusk) fog = ['#21173a', 18, 52];
     this.scene.fog = fog ? new THREE.Fog(fog[0], fog[1], fog[2]) : null;
-    if (me) { this.myLight.position.set(U(me.x), (me.z === 1 ? 1.4 : 0) + 1.6, U(me.y)); }
+    if (me) { this.myLight.position.set(U(me.x), heightOf(me) + 1.6, U(me.y)); }
     this.myLight.intensity = myL;
     const seekers = hiding ? v.players.filter(p => p.alive && p.it) : dmDark ? v.players.filter(p => p.alive) : [];
     while (this.spots.length < seekers.length) { const s2 = new THREE.SpotLight('#fff6c0', 0, 11, 0.6, 0.4, 1); this.scene.add(s2, s2.target); this.spots.push(s2); }
     this.spots.forEach((s2, i) => {
       const p = seekers[i];
       s2.intensity = p ? (dmDark ? 34 : 40) : 0; s2.distance = dmDark ? 13 : 11;
-      if (p) { const h = (p.z === 1 ? 1.4 : 0) + 0.9; s2.position.set(U(p.x), h, U(p.y)); s2.target.position.set(U(p.x) + p.fdx * 4, 0, U(p.y) + p.fdy * 4); }
+      if (p) { const h = heightOf(p) + 0.9; s2.position.set(U(p.x), h, U(p.y)); s2.target.position.set(U(p.x) + p.fdx * 4, 0, U(p.y) + p.fdy * 4); }
     });
 
     // world animation & dynamic instanced sets
     for (const pt of this.portals) pt.rotation.y += dt * 2;
+    if (this.flames3 && this.flames3.length) {
+      for (const f of this.flames3) { const k2 = 1 + Math.sin(t * 14 + f.ph) * 0.18 + Math.sin(t * 23 + f.ph * 2) * 0.1; f.a.scale.set(0.4 * k2, 0.8 * k2, 0.4 * k2); f.b.scale.set(0.22, 0.5 * (2 - k2), 0.22); }
+      if (!this.tl) { this.tl = []; for (let i = 0; i < 5; i++) { const l = new THREE.PointLight('#ff9a40', 0, 9, 1.4); this.scene.add(l); this.tl.push(l); } }
+      const cxz = this.cam, near3 = this.torchPos.map(p => [p, (p[0] - cxz.x) ** 2 + (p[1] - cxz.y) ** 2 * 0.3 + (p[2] - cxz.z) ** 2]).sort((a, b) => a[1] - b[1]);
+      this.tl.forEach((l, i) => { const e = near3[i]; if (!e) { l.intensity = 0; return; } l.position.set(e[0][0], e[0][1] + 0.2, e[0][2]); l.intensity = 7 + Math.sin(t * 15 + i * 2) * 1.4 + Math.sin(t * 27 + i) * 0.8; });
+      if (Math.random() < dt * 14 && near3[0]) { const p = near3[Math.floor(Math.random() * Math.min(4, near3.length))][0]; this.parts.push({ x: p[0] * TS, y: p[2] * TS, h: p[1] * TS, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, vh: 18 + Math.random() * 14, life: 1.1, max: 1.1, col: Math.random() < 0.5 ? '#ff9a2a' : '#ffd23f', size: 1 }); }
+    }
     if (this.mz) for (const m of this.mz) { m.t = Math.max(0, m.t - dt); m.l.intensity = m.t > 0 ? 8 : 0; }
     if (this.beltTex) this.beltTex.offset.x = -((t * BELT_SPEED / TS) % 1);
     if (this.lights) { const ph = Math.floor(t * 2); const cols = ['#ff4a3b', '#ffd23f', '#4ad0ff', '#7dff5a', '#ff7ad9']; for (let k = 0; k < this.lights.count; k++) this.lights.setColorAt(k, new THREE.Color(cols[(k + ph) % 5])); this.lights.instanceColor.needsUpdate = true; }
@@ -455,13 +538,13 @@ export class Renderer3D {
       if (reveal) return false;
       if (p.fx && p.fx.invis > 0) return true;
       const far = !me || Math.hypot(me.x - p.x, me.y - p.y) > 28;
-      return (inHide(p) && (far || p.hero === 'ninja')) || (underUp(p) && me && (me.z || 0) === 1 && far);
+      return (inHide(p) && (far || p.hero === 'ninja')) || (underUp(p) && me && (me.z || 0) > 0 && far);
     };
     this.bushMat.opacity = me && me.alive && inHide(me) ? 0.45 : 1;
-    if (this.upMesh) this.upMat.opacity = me && underUp(me) && !me.stairs ? 0.35 : 1;
+    for (const dm2 of this.deckMats || []) dm2.opacity = me && underUp(me) && !me.stairs ? 0.3 : 1;
 
-    const pl = this.pool, hOf = p => (p.z === 1 && !p.stairs ? 1.4 : 0);
-    pl.runes.sync(v.runes, (o, r) => { o.position.set(U(r.x), 0.45 + Math.sin(t * 3 + r.id) * 0.08, U(r.y)); o.rotation.y = t * 1.5 + r.id; o.userData.gl.material.color.set(RUNES[r.k].col); });
+    const pl = this.pool, hOf = p => heightOf(p);
+    pl.runes.sync(v.runes, (o, r) => { o.position.set(U(r.x), (r.z || 0) * 1.4 + 0.45 + Math.sin(t * 3 + r.id) * 0.08, U(r.y)); o.rotation.y = t * 1.5 + r.id; o.userData.gl.material.color.set(RUNES[r.k].col); });
     pl.gifts.sync(v.gifts, (o, gf) => { o.position.set(U(gf.x), 0.25 + Math.abs(Math.sin(t * 3 + gf.id)) * 0.1, U(gf.y)); o.userData.b.material = lam(['#d8453b', '#3f7fe0', '#4f9a45', '#8e58b0'][gf.c % 4]); });
     pl.items.sync(v.items, (o, it) => { o.position.set(U(it.x), 0.35, U(it.y)); o.rotation.y = t * 2; o.userData.b.material = lam(ITEMS[it.k].col, { emissive: '#2a1a00' }); });
     pl.bombs.sync(v.bombs, (o, b) => { o.position.set(U(b.x), 0, U(b.y)); const s2 = 0.6 + (b.t < 0.7 ? Math.abs(Math.sin(t * 20)) * 0.15 : Math.sin(t * 6) * 0.04); o.userData.s.scale.setScalar(s2); });
@@ -516,7 +599,7 @@ export class Renderer3D {
       if (hidden) continue;
       const f = p.fx || {};
       m.root.rotation.set(0, 0, 0);
-      m.root.position.set(U(p.x), hOf(p) + (p.stairs ? 0.7 : 0), U(p.y));
+      m.root.position.set(U(p.x), hOf(p), U(p.y));
       m.body.rotation.y = Math.atan2(p.fdx || 0, p.fdy === undefined ? 1 : p.fdy);
       const sw = p.m ? Math.sin(t * 14 + (p.seed || 0)) * 0.6 : 0;
       m.legL.rotation.x = sw; m.legR.rotation.x = -sw; m.armL.rotation.x = -sw * 0.8; m.armR.rotation.x = sw * 0.8;

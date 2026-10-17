@@ -1,6 +1,7 @@
 // Authoritative game simulation (runs on host / solo).
-import { genMap, TS, MW, MH, T, collides, tileAt, tileIdx, solidIdx, bfs, isHideT, isSolidT, MAP_TYPES, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED } from './map.js';
+import { genMap, TS, MW, MH, T, collides, tileAt, tileIdx, solidIdx, bfs, isHideT, isSolidT, MAP_TYPES, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED, BELT_DIRS } from './map.js';
 
+export const MAXZ = 4;
 export const R = 5, BASE = 72, SUDDEN = 50, KOTH_WIN = 45, CTF_WIN = 3, HIDE_T = 30;
 
 export const RUNES = {
@@ -189,16 +190,16 @@ export function moveBody(map, p, ax, ay, dt, mult, slip, noclip) {
   }
   // conveyor belts carry you along (ground floor only)
   const bi = tileIdx(p.x, p.y), bd = map.belt ? map.belt[bi] : -1;
-  if (bd >= 0 && !noclip && z !== 1 && !p.stairs) {
+  if (bd >= 0 && !noclip && z === 0 && !p.stairs) {
     const bx = BELT_DX[bd] * BELT_SPEED * dt, by = BELT_DY[bd] * BELT_SPEED * dt;
     if (!collides(map, p.x + bx, p.y, R, z)) p.x += bx;
     if (!collides(map, p.x, p.y + by, R, z)) p.y += by;
   }
   // floors: stairs switch level, falling off a missing floor drops you down
   const ti = tileIdx(p.x, p.y);
-  if (map.g[ti] === T.STAIRS) p.stairs = 1;
-  else if (p.stairs) { p.stairs = 0; p.z = map.up[ti] ? 1 : 0; }
-  else if (p.z === 1 && !map.up[ti]) p.z = 0;
+  if (map.g[ti] === T.STAIRS) { p.stairs = 1; p.sti = ti; }
+  else if (p.stairs) { p.stairs = 0; const lo = p.sti !== undefined ? map.stair[p.sti] : 0; p.z = map.lvl[ti] === lo + 1 ? lo + 1 : lo; }
+  else if (p.z > 0 && map.lvl[ti] !== p.z) p.z = 0;
   if (l > 0.2 && mult > 0) { const n = Math.hypot(ax, ay); p.fdx = ax / n; p.fdy = ay / n; }
   p.m = Math.hypot(p.vx, p.vy) > 12 ? 1 : 0;
 }
@@ -330,10 +331,11 @@ export class Sim {
     for (let tries = 0; tries < 30; tries++) {
       const [x, y] = at || pick(this.map.walk);
       const ti = tileIdx(x, y);
-      if (this.map.dyn.has(ti) || this.map.crates.has(ti) || this.map.up[ti]) { if (at) return; continue; }
-      if (!at && ps.some(p => p.alive && d2(p, { x, y }) < 48 * 48)) continue;
-      if (!at && this.runes.some(r => d2(r, { x, y }) < 40 * 40)) continue;
-      this.runes.push({ id: this.uid++, x, y, k: k || pick(RUNE_KEYS) });
+      if (this.map.dyn.has(ti) || this.map.crates.has(ti) || (at && this.map.up[ti])) { if (at) return; continue; }
+      const z = !at && this.map.up[ti] && Math.random() < 0.75 ? this.map.lvl[ti] : 0;
+      if (!at && ps.some(p => p.alive && (p.z || 0) === z && d2(p, { x, y }) < 48 * 48)) continue;
+      if (!at && this.runes.some(r => (r.z || 0) === z && d2(r, { x, y }) < 40 * 40)) continue;
+      this.runes.push({ id: this.uid++, x, y, z, k: k || pick(RUNE_KEYS) });
       return;
     }
   }
@@ -1048,7 +1050,7 @@ export class Sim {
     }
 
     for (const p of ps) {
-      if (!p.alive || p.portalCd > 0 || p.z === 1) continue;
+      if (!p.alive || p.portalCd > 0 || p.z > 0) continue;
       const ti = tileIdx(p.x, p.y);
       for (const pr of map.portals) {
         const dest = ti === pr[0] ? pr[1] : ti === pr[1] ? pr[0] : -1;
@@ -1064,7 +1066,7 @@ export class Sim {
       if (!p.alive) continue;
       for (let i = 0; i < this.runes.length; i++) {
         const r = this.runes[i];
-        if (d2(p, r) >= 11 * 11 || p.z === 1) continue;
+        if (d2(p, r) >= 11 * 11 || p.stairs || (r.z || 0) !== (p.z || 0)) continue;
         if (r.k === 'gold') {
           p.fx.shield = 8; p.st.gold++;
           if (this.tagMode) p.score = Math.max(0, p.score - 10);
@@ -1089,7 +1091,7 @@ export class Sim {
       }
       for (let i = 0; i < this.gifts.length; i++) {
         const g = this.gifts[i];
-        if (d2(p, g) >= 11 * 11 || p.z === 1) continue;
+        if (d2(p, g) >= 11 * 11 || p.z > 0) continue;
         this.gifts.splice(i, 1);
         this.openGift(p, g);
         break;
@@ -1310,7 +1312,7 @@ export class Sim {
         if (this.mode === 'dm') { o.w = p.wpn; o.am = p.ammo; o.dn = p.down > 0 ? 1 : 0; o.pt = p.pts; o.fl = (p.flashT || 0) > 0 ? 1 : 0; }
         return o;
       }),
-      ru: this.runes.map(r => [r.id, r.x, r.y, r.k]),
+      ru: this.runes.map(r => [r.id, r.x, r.y, r.k, r.z || 0]),
       tr: this.traps.map(t => [t.id, Math.round(t.x), Math.round(t.y), t.owner, t.arm > 0 ? 0 : 1]),
       de: this.decoys.map(d => [d.id, r1(d.x), r1(d.y), r2(d.fdx), r2(d.fdy), d.owner]),
       pu: this.puddles.map(p => [p.id, Math.round(p.x), Math.round(p.y), p.owner]),
@@ -1421,6 +1423,25 @@ export class Sim {
     this.steer(p, ai.wx, ai.wy, spd);
   }
 
+  // bots that end up on an upper deck linger a moment, then walk to the nearest stairs down
+  botLevel(p, dt) {
+    const map = this.map, ai = p.ai;
+    if (p.stairs) {
+      const ti = tileIdx(p.x, p.y), d = map.stairD[ti], [dx, dy] = BELT_DIRS[d];
+      const sg = (p.vx * dx + p.vy * dy) >= 0 ? 1 : -1;
+      this.steer(p, p.x + dx * sg * 24, p.y + dy * sg * 24, 1);
+      return true;
+    }
+    if (!(p.z > 0)) { ai.dwell = 0; return false; }
+    ai.dwell = (ai.dwell || 0) + dt;
+    if (ai.dwell < 2.5) { p.ax = p.ay = 0; return true; }
+    const goal = this.pathStep(tileIdx(p.x, p.y), n => map.g[n] === T.STAIRS && map.stair[n] + 1 === p.z, null, 2200, p.z);
+    if (goal < 0) return false;
+    const [tx, ty] = this.center(goal);
+    this.steer(p, tx, ty, 1);
+    return true;
+  }
+
   botGhost(p) {
     let best = null, bd = 1e9;
     for (const q of this.players) if (q.alive) { const d = d2(p, q); if (d < bd) { bd = d; best = q; } }
@@ -1432,6 +1453,7 @@ export class Sim {
   botThink(p, dt) {
     const ai = p.ai, ti = tileIdx(p.x, p.y);
     if (this.unstick(p, dt)) return;
+    if (this.botLevel(p, dt)) return;
     ai.t -= dt;
     if (ai.t <= 0) { ai.t = 0.3 + Math.random() * 0.3; ai.jx = (Math.random() - 0.5) * 0.35; ai.jy = (Math.random() - 0.5) * 0.35; }
     let tx = null, ty = null, spd = 1;
@@ -1473,7 +1495,7 @@ export class Sim {
       } else {
         spd = 0.75;
         let best = null, bd = 120 * 120;
-        for (const r of [...this.runes, ...this.gifts]) if (!p.rune || r.k === 'gold' || r.c !== undefined) { const dd = d2(p, r); if (dd < bd) { bd = dd; best = r; } }
+        for (const r of [...this.runes, ...this.gifts]) if ((r.z || 0) === 0 && (!p.rune || r.k === 'gold' || r.c !== undefined)) { const dd = d2(p, r); if (dd < bd) { bd = dd; best = r; } }
         if (best) { tx = best.x; ty = best.y; spd = 1; }
         if (p.rune === 'eye' && p.held > 4) this.useRune(p);
       }
@@ -1485,6 +1507,7 @@ export class Sim {
   botHide(p, dt) {
     const ai = p.ai;
     if (this.unstick(p, dt)) return;
+    if (this.botLevel(p, dt)) return;
     const seekers = this.players.filter(q => q.alive && q.it);
     if (p.it) {
       if (this.hideT > 0) { p.ax = p.ay = 0; return; }
@@ -1516,6 +1539,7 @@ export class Sim {
   botCTF(p, dt) {
     const ai = p.ai;
     if (this.unstick(p, dt)) return;
+    if (this.botLevel(p, dt)) return;
     const mid = MW * TS / 2, my = this.flags[p.team], en = this.flags[1 - p.team];
     const mates = this.players.filter(q => q.team === p.team && q.bot).sort((a, b) => a.id < b.id ? -1 : 1);
     const role = mates.indexOf(p) % 2 === 0 ? 'att' : 'def';
@@ -1544,6 +1568,7 @@ export class Sim {
   botKoth(p, dt) {
     const z = this.zone;
     if (this.unstick(p, dt)) return;
+    if (this.botLevel(p, dt)) return;
     const inZone = Math.hypot(p.x - z.x, p.y - z.y) < z.r * 0.7;
     if (inZone) {
       const rival = this.players.find(q => q !== p && q.alive && d2(p, q) < 24 * 24);
@@ -1554,14 +1579,14 @@ export class Sim {
   }
 
   // BFS from start; returns the first tile on the path to the nearest tile matching goal, or -1
-  pathStep(start, goal, avoid, maxNodes = 900) {
+  pathStep(start, goal, avoid, maxNodes = 900, z = 0) {
     if (goal(start)) return start;
     const par = this.par; par.fill(-2);
     const q = [start]; par[start] = -1;
     for (let h = 0; h < q.length && q.length < maxNodes; h++) {
       const c = q[h];
       for (const n of N4(c)) {
-        if (par[n] !== -2 || solidIdx(this.map, n) || (avoid && avoid.has(n))) continue;
+        if (par[n] !== -2 || solidIdx(this.map, n, z) || (avoid && avoid.has(n))) continue;
         par[n] = c; q.push(n);
         if (goal(n)) { let s = n; while (par[s] !== start) s = par[s]; return s; }
       }

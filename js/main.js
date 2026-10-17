@@ -365,7 +365,7 @@ function onHostMsg(conn, m) {
   if (m.t === 'emo') { if (p) sim.emote(p, m.e | 0); return; }
   if (m.t === 'in') {
     if (m.tp === p.tp && (p.alive || p.ghost) && sim.phase === 'play' && Number.isFinite(m.x) && Number.isFinite(m.y)) {
-      if (Math.hypot(m.x - p.x, m.y - p.y) < 120) { p.x = m.x; p.y = m.y; p.z = m.z === 1 ? 1 : 0; p.stairs = m.st ? 1 : 0; } else p.tp++;
+      if (Math.hypot(m.x - p.x, m.y - p.y) < 120) { p.x = m.x; p.y = m.y; p.z = Math.max(0, Math.min(4, m.z | 0)); p.stairs = m.st ? 1 : 0; } else p.tp++;
       if (Number.isFinite(m.dx)) { p.fdx = m.dx; p.fdy = m.dy; }
       if (Array.isArray(m.aa) && Number.isFinite(m.aa[0]) && Number.isFinite(m.aa[1])) { const l = Math.hypot(m.aa[0], m.aa[1]) || 1; p.aimx = m.aa[0] / l; p.aimy = m.aa[1] / l; }
       p.m = m.m ? 1 : 0;
@@ -920,7 +920,7 @@ function clientView(now) {
     map: cl.map, players, decoys, spirits, mobs, flags, fright: L.fr || 0, teamScore: L.ts,
     zone: L.kz ? { x: L.kz[0], y: L.kz[1], r: L.kz[2], owner: L.kz[3], contested: !!L.kz[4], t: L.kz[5] } : null,
     hideT: L.ht || 0, whistleT: L.wh || 0, emotes,
-    runes: L.ru.map(r => ({ id: r[0], x: r[1], y: r[2], k: r[3] })),
+    runes: L.ru.map(r => ({ id: r[0], x: r[1], y: r[2], k: r[3], z: r[4] || 0 })),
     traps: L.tr.map(t => ({ x: t[1], y: t[2], owner: t[3], armed: !!t[4] })),
     puddles: (L.pu || []).map(p => ({ x: p[1], y: p[2] })),
     meteors: (L.mt || []).map(m => ({ x: m[1], y: m[2], t: m[3] })),
