@@ -1320,6 +1320,8 @@ export class Sim {
         if (lives) o.l = p.lives;
         if (bomber) { o.bo = p.boots; o.pw = [p.maxB, p.range]; }
         if (this.mode === 'ctf') { o.tm = p.team; o.c = p.carry; }
+        if (this.mode === 'koth') o.sc = r1(Math.max(0, p.shoveCd));
+        if (this.mode === 'dm') o.fc = r2(Math.max(0, p.fireCd));
         if (p.hero) { o.h = p.hero; o.cd = r1(p.abilCd); }
         if (this.mode === 'dm') { o.w = p.wpn; o.am = p.ammo; o.dn = p.down > 0 ? 1 : 0; o.pt = p.pts; o.fl = (p.flashT || 0) > 0 ? 1 : 0; }
         return o;
@@ -1334,7 +1336,7 @@ export class Sim {
       w: [...this.map.dyn.keys()],
     };
     if (bomber) {
-      s.bm = this.bombs.map(b => [b.id, b.x, b.y, r2(b.t)]);
+      s.bm = this.bombs.map(b => [b.id, b.x, b.y, r2(b.t), b.owner]);
       s.im = this.items.map(it => [it.id, it.x, it.y, it.k]);
       s.cb = this.broken;
       s.sd = this.sdN || 0;

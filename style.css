@@ -202,3 +202,11 @@ body[data-jh=right] #emoBtn { right: auto; left: max(30px, env(safe-area-inset-l
 .ctl.hide { display: none; }
 #padTest { width: 100%; height: 170px; background: #12161a; border: 2px dashed var(--line); touch-action: none; display: block; }
 #padNote { text-align: center; }
+
+/* cooldown rings */
+#bombBtn::after, #emoBtn::after { content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; opacity: 0; background: conic-gradient(rgba(5, 5, 12, .74) calc(var(--cd, 0) * 360deg), transparent 0); }
+#bombBtn.cdon::after, #emoBtn.cdon::after { opacity: 1; }
+.cdn { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-style: normal; font-family: var(--font); font-size: 16px; color: #fff; text-shadow: 2px 2px 0 #000, -1px -1px 0 #000; pointer-events: none; z-index: 2; }
+#emoBtn .cdn { font-size: 10px; }
+.rdy { animation: rdy .45s ease-out; }
+@keyframes rdy { 0% { box-shadow: 0 0 0 0 rgba(255, 240, 160, .95), 0 4px 0 #000; transform: scale(1.12); } 100% { box-shadow: 0 0 0 14px rgba(255, 240, 160, 0), 0 4px 0 #000; transform: scale(1); } }

@@ -449,7 +449,7 @@ function onSnap(m) {
   const o = cl.own;
   if (q.tp !== o.tp) { o.x = q.x; o.y = q.y; o.vx = o.vy = 0; o.tp = q.tp; o.z = q.z || 0; o.stairs = q.st || 0; }
   o.it = !!q.it; o.alive = !!q.a; o.ghost = !!q.g; o.score = q.s; o.sfx = q.f || {};
-  o.wpn = q.w || 'fist'; o.ammo = q.am || 0; o.down = q.dn ? 1 : 0; o.pts = q.pt || 0; o.hero = q.h || null; o.cd = q.cd || 0; o.lives = q.l; o.boots = q.bo || 0; o.pw = q.pw; o.team = q.tm ?? -1; o.carry = q.c ?? -1;
+  o.wpn = q.w || 'fist'; o.ammo = q.am || 0; o.down = q.dn ? 1 : 0; o.pts = q.pt || 0; o.hero = q.h || null; o.cd = q.cd || 0; o.sc = q.sc || 0; o.fc = q.fc || 0; o.lives = q.l; o.boots = q.bo || 0; o.pw = q.pw; o.team = q.tm ?? -1; o.carry = q.c ?? -1;
   if (now - cl.useAt > 450) o.rune = q.r;
 }
 
@@ -724,8 +724,11 @@ for (const b of document.querySelectorAll('.micBtn')) b.onclick = () => toggleMi
 
 // ---------- reactions ----------
 const emotes = new Map();
+let emoUntil = 0;
 function sendEmote(i) {
   $('emoWheel').classList.add('hidden');
+  if (performance.now() < emoUntil) return;
+  emoUntil = performance.now() + 1200;
   if (sim) { const mp = sim.byId(myId); if (mp) sim.emote(mp, i); }
   else if (cl) send({ t: 'emo', e: i });
 }
@@ -784,6 +787,18 @@ $('exitBtn').onclick = () => {
   exitArm = performance.now(); toast('Нажми ✕ ещё раз, чтобы выйти');
 };
 
+// radial cooldown ring: dark sector unwinds clockwise, seconds in the middle, a flash when ready
+function setCd(btn, rem, total) {
+  const k = rem > 0.03 && total > 0 ? Math.min(1, rem / total) : 0;
+  btn.style.setProperty('--cd', k.toFixed(3));
+  let n = btn._cdn;
+  if (!n) { n = btn._cdn = document.createElement('i'); n.className = 'cdn'; btn.appendChild(n); }
+  const txt = k > 0 && total >= 1 ? (rem >= 10 ? String(Math.ceil(rem)) : rem.toFixed(1)) : '';
+  if (n.textContent !== txt) n.textContent = txt;
+  if (btn._was && !k) { btn.classList.remove('rdy'); void btn.offsetWidth; btn.classList.add('rdy'); }
+  btn._was = k > 0;
+  btn.classList.toggle('cdon', k > 0);
+}
 let lastRune, lastTick = -1, hudT = 0;
 const fmtT = s => { s = Math.max(0, Math.ceil(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 function updateHud(v, dt) {
@@ -797,6 +812,20 @@ function updateHud(v, dt) {
     if (rune) $('runeBtn').style.setProperty('--rc', RUNES[rune].col);
   }
   if (centerT > 0) { centerT -= dt; if (centerT <= 0) $('center').classList.remove('pop'); }
+  // cooldown rings on the round buttons
+  { let rem = 0, total = 1;
+    if (me && me.alive !== false) {
+      if (v.mode === 'heroes' && me.hero) { rem = me.abilCd ?? me.cd ?? 0; total = HEROES[me.hero].cd; }
+      else if (v.mode === 'koth') { rem = me.shoveCd ?? me.sc ?? 0; total = 1.1; }
+      else if (v.mode === 'dm') { const w = WEAPONS[me.wpn || 'fist']; if (w.rate >= 0.2) { rem = me.fireCd ?? me.fc ?? 0; total = w.rate; } }
+      else if (v.mode === 'bomber') {
+        const mine = (v.bombs || []).filter(b => b.owner === myId), cap = me.pw ? me.pw[0] : me.maxB;
+        if (cap && mine.length >= cap) { rem = Math.min(...mine.map(b => b.t)); total = 2.2; }
+      }
+    }
+    setCd($('bombBtn'), rem, total);
+    setCd($('emoBtn'), Math.max(0, (emoUntil - performance.now()) / 1000), 1.2);
+  }
   if (v.mode === 'dm' && me) {
     const w = WEAPONS[me.wpn || 'fist'];
     const bb = $('bombBtn').querySelector('b');
@@ -812,7 +841,7 @@ function updateHud(v, dt) {
   if (v.mode === 'heroes' && me && me.hero) {
     const h = HEROES[me.hero], cd = me.abilCd ?? me.cd ?? 0;
     $('bombBtn').querySelector('b').textContent = h.icon;
-    $('bombBtn').querySelector('span').textContent = cd > 0 ? `${h.ab} ${Math.ceil(cd)}` : h.ab;
+    $('bombBtn').querySelector('span').textContent = h.ab;
     $('bombBtn').classList.toggle('cool', cd > 0);
   }
   hudT -= dt;
@@ -901,11 +930,11 @@ function clientView(now) {
     const info = cl.roster.get(q.i) || { name: '?', color: '#888888' };
     if (q.i === myId && cl.own) {
       const o = cl.own;
-      return { ...info, id: q.i, x: o.x, y: o.y, fdx: o.fdx, fdy: o.fdy, m: o.m, it: o.it, alive: o.alive, ghost: o.ghost, score: o.score, rune: o.rune, fx: o.fx, lives: o.lives, boots: o.boots, pw: o.pw, z: o.z, stairs: o.stairs, team: o.team, carry: o.carry, hero: o.hero, cd: o.cd, wpn: o.wpn, ammo: o.ammo, down: o.down, pts: o.pts };
+      return { ...info, id: q.i, x: o.x, y: o.y, fdx: o.fdx, fdy: o.fdy, m: o.m, it: o.it, alive: o.alive, ghost: o.ghost, score: o.score, rune: o.rune, fx: o.fx, lives: o.lives, boots: o.boots, pw: o.pw, z: o.z, stairs: o.stairs, team: o.team, carry: o.carry, hero: o.hero, cd: o.cd, sc: o.sc, fc: o.fc, wpn: o.wpn, ammo: o.ammo, down: o.down, pts: o.pts };
     }
     const lp = lerpPos(q.i, 'p', 0);
     const src = lp ? lp[2] : q;
-    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, ghost: !!q.g, score: q.s, rune: q.r, fx: q.f || {}, lives: q.l, z: q.z || 0, stairs: q.st || 0, team: q.tm ?? -1, carry: q.c ?? -1, wpn: q.w || 'fist', ammo: q.am || 0, down: q.dn || 0, fl: q.fl || 0, pts: q.pt || 0, hero: q.h || null, cd: q.cd || 0, seed: q.i.length };
+    return { ...info, id: q.i, x: lp ? lp[0] : q.x, y: lp ? lp[1] : q.y, fdx: src.dx, fdy: src.dy, m: src.m, it: !!q.it, alive: !!q.a, ghost: !!q.g, score: q.s, rune: q.r, fx: q.f || {}, lives: q.l, z: q.z || 0, stairs: q.st || 0, team: q.tm ?? -1, carry: q.c ?? -1, wpn: q.w || 'fist', ammo: q.am || 0, down: q.dn || 0, fl: q.fl || 0, pts: q.pt || 0, hero: q.h || null, cd: q.cd || 0, sc: q.sc || 0, fc: q.fc || 0, seed: q.i.length };
   });
   const decoys = L.de.map(d => {
     const lp = lerpPos(d[0], 'de', 1);
@@ -927,7 +956,7 @@ function clientView(now) {
     puddles: (L.pu || []).map(p => ({ x: p[1], y: p[2] })),
     meteors: (L.mt || []).map(m => ({ x: m[1], y: m[2], t: m[3] })),
     gifts: (L.gf || []).map(g => ({ id: g[0], x: g[1], y: g[2], c: g[3] })),
-    bombs: (L.bm || []).map(b2 => ({ id: b2[0], x: b2[1], y: b2[2], t: b2[3] })),
+    bombs: (L.bm || []).map(b2 => ({ id: b2[0], x: b2[1], y: b2[2], t: b2[3], owner: b2[4] })),
     items: (L.im || []).map(it => ({ id: it[0], x: it[1], y: it[2], k: it[3] })),
     sd: L.sd || 0,
     pickups: L.pk ? L.pk.map(k => ({ id: k[0], x: k[1], y: k[2], k: k[3] })) : null,
