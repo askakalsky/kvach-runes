@@ -715,7 +715,7 @@ export class Renderer {
         for (let k = -1; k < 2; k++) {
           const o = ((k * 8 + off * sgn) % 16 + 16) % 16;
           for (let j = 0; j < 4; j++) {
-            const a = o + (sgn > 0 ? -j : j), b1 = 4 + j, b2 = 11 - j;
+            const a = o + (sgn > 0 ? j - 3 : 3 - j), b1 = 4 + j, b2 = 11 - j;
             if (a < 0 || a > 15) continue;
             if (horiz) { P(g, '#e0b252', px + a, py + b1); P(g, '#e0b252', px + a, py + b2); }
             else { P(g, '#e0b252', px + b1, py + a); P(g, '#e0b252', px + b2, py + a); }

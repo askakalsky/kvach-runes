@@ -317,7 +317,7 @@ export class Renderer3D {
     if (belts.length) {
       const bt = canvasTex((g2, P) => {
         P('#33333c', 0, 0, 16, 16); P('#55555f', 0, 0, 16, 1); P('#55555f', 0, 15, 16, 1);
-        for (const o of [3, 11]) for (let j = 0; j < 4; j++) { P('#e0b252', o - j, 4 + j); P('#e0b252', o - j, 11 - j); }
+        for (const o of [3, 11]) for (let j = 0; j < 4; j++) { P('#e0b252', o + j - 3, 4 + j); P('#e0b252', o + j - 3, 11 - j); }
       });
       bt.wrapS = THREE.RepeatWrapping;
       this.beltTex = bt;
