@@ -370,9 +370,11 @@ function onHostMsg(conn, m) {
       if (Array.isArray(m.aa) && Number.isFinite(m.aa[0]) && Number.isFinite(m.aa[1])) { const l = Math.hypot(m.aa[0], m.aa[1]) || 1; p.aimx = m.aa[0] / l; p.aimy = m.aa[1] / l; }
       p.m = m.m ? 1 : 0;
     }
-    p.fire = !!m.fi;
-    if (m.u > p.useSeq) { p.useSeq = m.u; sim.useRune(p); }
-    if (m.bs > p.bombSeq) { p.bombSeq = m.bs; sim.action(p); }
+    // every press counts: sequence numbers only grow, so presses that share one packet are all replayed
+    p.fire = !!m.fi; p.inAge = 0; p.remote = true;
+    if (Number.isFinite(m.fs) && m.fs > p.fireSeq) { if (m.fs - p.fireSeq < 50) p.firePend = 0.3; p.fireSeq = m.fs; }
+    if (Number.isFinite(m.u) && m.u > p.useSeq) { const n = Math.min(3, m.u - p.useSeq); p.useSeq = m.u; for (let k = 0; k < n; k++) sim.useRune(p); }
+    if (Number.isFinite(m.bs) && m.bs > p.bombSeq) { const n = Math.min(3, m.bs - p.bombSeq); p.bombSeq = m.bs; for (let k = 0; k < n; k++) sim.action(p); }
   }
 }
 
@@ -420,7 +422,7 @@ function onClientMsg(m) {
       renderLobby(m); show('lobby');
       break;
     case 'start':
-      cl = { map: genMap(m.seed, m.mapType, m.theme, m.mode), mode: m.mode, dur: m.dur, roster: new Map(m.roster.map(r => [r.id, r])), snaps: [], latest: null, own: null, useSeq: 0, bombSeq: 0, useAt: 0, lastSend: 0, localFx: {}, broken: 0, eaten: 0 };
+      cl = { map: genMap(m.seed, m.mapType, m.theme, m.mode), mode: m.mode, dur: m.dur, roster: new Map(m.roster.map(r => [r.id, r])), snaps: [], latest: null, own: null, useSeq: 0, bombSeq: 0, fireSeq: 0, useAt: 0, lastSend: 0, localFx: {}, broken: 0, eaten: 0 };
       setMapAll(cl.map, m.seed);
       enterGame(m.mode, m.theme);
       break;
@@ -772,7 +774,7 @@ $('toLobbyBtn').onclick = () => { sim = null; results = null; renderLobby(); sho
 
 // ---------- HUD ----------
 $('runeBtn').addEventListener('pointerdown', e => { e.preventDefault(); A.audioInit(); if (input.enabled) input.useQ++; });
-$('bombBtn').addEventListener('pointerdown', e => { e.preventDefault(); A.audioInit(); if (input.enabled) { input.actQ++; input.btnFire = true; } });
+$('bombBtn').addEventListener('pointerdown', e => { e.preventDefault(); A.audioInit(); if (input.enabled) { input.actQ++; input.fireQ++; input.btnFire = true; } });
 for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) $('bombBtn').addEventListener(ev, () => { input.btnFire = false; });
 $('muteBtn').onclick = () => { $('muteBtn').classList.toggle('off', A.toggleMute()); };
 $('muteBtn').classList.toggle('off', A.isMuted());
@@ -950,7 +952,7 @@ function tick(now) {
     const mp = sim.byId(myId), mv = localMove(sim.event && sim.event.k);
     if (mp) {
       mp.ax = mv.x; mp.ay = mv.y;
-      if (sim.mode === 'dm') { const a = aimFor(mp, view); mp.aimx = a[0]; mp.aimy = a[1]; mp.fire = fireHeld(); }
+      if (sim.mode === 'dm') { const a = aimFor(mp, view); mp.aimx = a[0]; mp.aimy = a[1]; mp.fire = fireHeld(); while (input.fireQ > 0) { input.fireQ--; mp.firePend = 0.3; } } else input.fireQ = 0;
       while (input.useQ > 0) { input.useQ--; sim.useRune(mp); }
       while (input.actQ > 0) { input.actQ--; sim.action(mp); }
     }
@@ -987,19 +989,24 @@ function tick(now) {
       } else { o.m = 0; o.vx = o.vy = 0; }
       const tryRune = () => {
         if (cl.mode === 'dm') { if (o.alive && L.ph === 'play') cl.useSeq++; return; }
-        if (o.rune && L.ph === 'play' && o.alive) {
-          cl.useSeq++; cl.useAt = now;
-          if (o.rune === 'dash') cl.localFx.dash = 0.3;
-          if (o.rune === 'haste') cl.localFx.haste = 4;
-          if (o.rune === 'phase') cl.localFx.phase = 3;
-          o.rune = null;
+        // always tell the host: the rune may have been picked up a moment ago and not reached us yet
+        if (L.ph === 'play' && o.alive) {
+          cl.useSeq++;
+          if (o.rune) {
+            cl.useAt = now;
+            if (o.rune === 'dash') cl.localFx.dash = 0.3;
+            if (o.rune === 'haste') cl.localFx.haste = 4;
+            if (o.rune === 'phase') cl.localFx.phase = 3;
+            o.rune = null;
+          }
         }
       };
       while (input.useQ > 0) { input.useQ--; tryRune(); }
-      while (input.actQ > 0) { input.actQ--; if (cl.mode === 'bomber' || cl.mode === 'koth' || cl.mode === 'heroes') { if (o.alive) cl.bombSeq++; } else tryRune(); }
+      while (input.actQ > 0) { input.actQ--; if (cl.mode === 'bomber' || cl.mode === 'koth' || cl.mode === 'heroes') { if (o.alive) cl.bombSeq++; } else if (cl.mode !== 'dm') tryRune(); }
+      while (input.fireQ > 0) { input.fireQ--; if (cl.mode === 'dm' && o.alive) cl.fireSeq++; }
       if (now - cl.lastSend >= 33) {
         cl.lastSend = now;
-        send({ t: 'in', x: r1(o.x), y: r1(o.y), dx: r2(o.fdx), dy: r2(o.fdy), m: o.m, u: cl.useSeq, bs: cl.bombSeq, tp: o.tp, z: o.z || 0, st: o.stairs || 0, fi: cl.mode === 'dm' && fireHeld() && o.alive ? 1 : 0, aa: o.aim ? [r2(o.aim[0]), r2(o.aim[1])] : undefined });
+        send({ t: 'in', x: r1(o.x), y: r1(o.y), dx: r2(o.fdx), dy: r2(o.fdy), m: o.m, u: cl.useSeq, bs: cl.bombSeq, fs: cl.fireSeq, tp: o.tp, z: o.z || 0, st: o.stairs || 0, fi: cl.mode === 'dm' && fireHeld() && o.alive ? 1 : 0, aa: o.aim ? [r2(o.aim[0]), r2(o.aim[1])] : undefined });
       }
     }
     view = clientView(now);

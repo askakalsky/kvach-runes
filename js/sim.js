@@ -322,7 +322,7 @@ export class Sim {
       x: spot[0], y: spot[1], vx: 0, vy: 0, fdx: 0, fdy: 1, m: 0, ax: 0, ay: 0, z: 0, stairs: 0,
       it: false, alive: true, ghost: false, ghostCd: 0, score: 0, rune: null, held: 0, fx: FX0(), st: ST0(),
       tp: 0, portalCd: 0, tagCd: 0, useSeq: 0, bombSeq: 0, outAt: 0, shoveCd: 0, carry: -1, emoteCd: 0,
-      wpn: 'fist', ammo: 0, fireCd: 0, fire: false, dead: 0, down: 0, pts: 0, combo: 0, comboT: 0,
+      wpn: 'fist', ammo: 0, fireCd: 0, fire: false, firePend: 0, fireSeq: 0, inAge: 0, remote: false, dead: 0, down: 0, pts: 0, combo: 0, comboT: 0,
       hero: this.mode === 'heroes' ? (HEROES[r.hero] ? r.hero : pick(HERO_KEYS)) : null, abilCd: 2,
       lives: 3, maxB: 1, range: 2, boots: 0,
       hist: [], histT: 0,
@@ -743,7 +743,8 @@ export class Sim {
       if (!p.alive) { if (p.dead > 0) { p.dead -= dt; if (p.dead <= 0 && this.phase === 'play') this.respawnDM(p); } continue; }
       p.fireCd -= dt; p.down = Math.max(0, p.down - dt); p.flashT = Math.max(0, (p.flashT || 0) - dt);
       if (p.comboT > 0) { p.comboT -= dt; if (p.comboT <= 0) p.combo = 0; }
-      if (p.fire && p.fireCd <= 0) this.attack(p);
+      if (p.firePend > 0) p.firePend -= dt;
+      if ((p.fire || p.firePend > 0) && p.fireCd <= 0) { p.firePend = 0; this.attack(p); }
       if (p.wpn === 'fist' && p.down <= 0) {
         const k = this.pickups.find(q => !q.wait && d2(q, p) < 11 * 11);
         if (k) this.takePickup(p, k);
@@ -988,6 +989,7 @@ export class Sim {
       for (const k in p.fx) if (p.fx[k] > 0) p.fx[k] = Math.max(0, p.fx[k] - dt);
       if (p.hero === 'brute') { p.fx.stun = Math.max(0, p.fx.stun - dt); p.fx.frozen = Math.max(0, p.fx.frozen - dt); }
       p.portalCd -= dt; p.tagCd -= dt; p.ghostCd -= dt; p.shoveCd -= dt; p.emoteCd -= dt;
+      if (p.remote) { p.inAge += dt; if (p.inAge > 0.6) p.fire = false; }   // a silent client must not keep shooting
       if (p.abilCd > 0) p.abilCd = Math.max(0, p.abilCd - dt);
       if (p.rune) p.held += dt;
       p.histT -= dt;

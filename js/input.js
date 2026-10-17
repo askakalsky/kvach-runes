@@ -1,6 +1,7 @@
 // Keyboard + configurable touch stick (floating / fixed / d-pad), mirrored layouts.
 // useQ: rune key presses (E / Shift / Q); actQ: action key presses (Space / J / Enter)
-export const input = { useQ: 0, actQ: 0, enabled: false, dm: false, mouseDown: false, btnFire: false, mx: 0, my: 0, mouseT: -1e9 };
+// fireQ: every fire press (Space / J / Enter, left mouse, fire button) so a very short tap is never lost
+export const input = { useQ: 0, actQ: 0, fireQ: 0, enabled: false, dm: false, mouseDown: false, btnFire: false, mx: 0, my: 0, mouseT: -1e9 };
 const keys = new Set();
 // fire trigger is held (automatic weapons in deathmatch)
 export function fireHeld() { return input.enabled && (keys.has('Space') || keys.has('KeyJ') || input.mouseDown || input.btnFire); }
@@ -125,7 +126,7 @@ export function initInput(canvas, onFirst) {
     keys.add(e.code);
     if (!e.repeat && input.enabled) {
       if (['KeyE', 'KeyQ', 'ShiftLeft', 'ShiftRight'].includes(e.code)) input.useQ++;
-      if (['Space', 'KeyJ', 'Enter'].includes(e.code)) input.actQ++;
+      if (['Space', 'KeyJ', 'Enter'].includes(e.code)) { input.actQ++; input.fireQ++; }
     }
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
   });
@@ -135,7 +136,7 @@ export function initInput(canvas, onFirst) {
   canvas.addEventListener('pointerdown', e => {
     onFirst();
     if (e.pointerType === 'mouse' && input.dm && input.enabled) {
-      if (e.button === 0) { input.mouseDown = true; input.mx = e.clientX; input.my = e.clientY; input.mouseT = performance.now(); }
+      if (e.button === 0) { input.fireQ++; input.mouseDown = true; input.mx = e.clientX; input.my = e.clientY; input.mouseT = performance.now(); }
       if (e.button === 2) input.useQ++;
       e.preventDefault();
       return;
