@@ -214,6 +214,7 @@ export class Renderer3D {
   setMap(map, seed, layers2d) {
     if (this.world) { this.scene.remove(this.world); this.world.traverse(o => { if (o.geometry && o.geometry !== BOX && o.geometry !== SPH && o.geometry !== CONE && o.geometry !== CYL) o.geometry.dispose(); }); }
     for (const p of this.pawns.values()) this.scene.remove(p.root);
+    for (const gr of this.floorGroups || []) if (gr) this.scene.remove(gr);
     this.pawns.clear();
     this.map = map; this.camInit = false; this.parts = []; this.texts = []; this.flames = []; this.bloods = []; this.tracers = [];
     const th = map.theme, win = isWinter(th), pac = map.type === 'pacman', hw = th === 'halloween';
@@ -280,7 +281,7 @@ export class Renderer3D {
     // decor objects
     const decoKind = map.type === 'neon' ? 'neon' : hw || map.type === 'graveyard' ? 'pumpkin' : win ? 'snowman' : map.type === 'beach' ? 'umbrella' : map.type === 'magic' ? 'crystal' : 'barrel';
     for (const i of tiles[T.DECOR] || []) {
-      if (map.deco[i]) continue;
+      if (map.fl.length > 1) continue;
       const x = i % MW + 0.5, y = ((i / MW) | 0) + 0.5, d = new THREE.Group();
       if (decoKind === 'pumpkin') { const p = new THREE.Mesh(SPH, lam('#d9772e', { emissive: '#5a2a00' })); p.scale.set(0.7, 0.55, 0.7); p.position.y = 0.28; d.add(p, box(0.06, 0.15, 0.06, lam('#4a6b2a'), 0, 0.6, 0)); }
       else if (decoKind === 'snowman') { for (const [r, h] of [[0.6, 0.3], [0.45, 0.75], [0.32, 1.1]]) { const s2 = new THREE.Mesh(SPH, lam('#f4f8fb')); s2.scale.setScalar(r); s2.position.y = h; d.add(s2); } d.add(box(0.08, 0.06, 0.2, lam('#ff8a2a'), 0, 1.1, 0.2)); d.add(box(0.3, 0.25, 0.3, lam('#2a2a2a'), 0, 1.35, 0)); }
@@ -295,81 +296,78 @@ export class Renderer3D {
       const cap = new THREE.Mesh(SPH, lam(magic ? ['#5ad0d0', '#c85aa8', '#9a7aff'][i % 3] : '#c8463d', magic ? { emissive: '#204a4a' } : undefined));
       cap.scale.set(0.3, 0.16, 0.3); cap.position.set(x + 0.15, 0.25, y); W.add(cap, box(0.07, 0.2, 0.07, lam('#e8dcc0'), x + 0.15, 0.1, y));
     }
-    // decks of the multi-storey castle: slabs, cliff faces, stairs, wall tops
-    const LH = 1.4, nlv = i => i < 0 || i >= MW * MH ? 0 : map.lvl[i];
-    this.deckMats = [];
-    const deckTex = L => canvasTex((g2, P) => {
-      const base = ['', '#6d6a74', '#8a5e36', '#4a3a5e', '#c8b878'][L], line = ['', '#56535d', '#6a4426', '#3a2c4c', '#b4a460'][L], hi = ['', '#827e8a', '#a47446', '#6a5a80', '#ece0a4'][L];
-      P(base, 0, 0, 16, 16);
-      if (L === 2) for (let k = 0; k < 4; k++) { P(line, 0, k * 4 + 3, 16, 1); P(hi, (k * 5) % 12, k * 4, 3, 1); }
-      else { P(line, 0, 0, 16, 1); P(line, 0, 0, 1, 16); noise(P, [line, hi], 12); }
+    // the building: floor 0 is the terrain itself, floors 1..3 are separate groups shown one at a time
+    const LH = 1.4, castle = map.fl && map.fl.length > 1;
+    this.deckMats = []; this.floorGroups = [null]; this.flames3 = []; this.torchPos = [];
+    const styleTex = st => canvasTex((g2, P) => {
+      if (st === 0) { P('#6a6674', 0, 0, 16, 16); P('#524e5c', 0, 7, 16, 1); P('#524e5c', 4, 0, 1, 8); P('#524e5c', 11, 8, 1, 8); noise(P, ['#7a7684'], 8); }
+      else if (st === 1) { P('#7a1a24', 0, 0, 16, 16); P('#9a2a34', 2, 2, 12, 12); P('#5a1018', 6, 6, 4, 4); P('#e0b252', 0, 0, 16, 1); P('#e0b252', 0, 0, 1, 16); }
+      else if (st === 2) { P('#8a5e36', 0, 0, 16, 16); for (let k = 0; k < 4; k++) { P('#6a4426', 0, k * 4 + 3, 16, 1); P('#a47446', (k * 5) % 12, k * 4, 3, 1); } }
+      else if (st === 3) { P('#2f4a6a', 0, 0, 16, 16); P('#3a5a7e', 1, 1, 6, 6); P('#3a5a7e', 9, 9, 6, 6); P('#223a56', 0, 0, 16, 1); P('#223a56', 0, 0, 1, 16); }
+      else { P('#4c4660', 0, 0, 16, 16); P('#6a6286', 2, 5, 7, 1); P('#2a2438', 11, 9, 1, 5); }
     });
-    const carpetTex = L => canvasTex((g2, P) => {
-      const c0 = ['', '#8a1c24', '#1c4a8a', '#8a1c24', '#6a1c8a'][L];
-      P(c0, 0, 0, 16, 16); P('#e0b252', 0, 0, 16, 1); P('#e0b252', 0, 15, 16, 1); P('#ffffff22', 3, 3, 10, 10);
-    });
-    for (let L = 1; L <= 4; L++) {
-      const ups = []; for (let i = 0; i < MW * MH; i++) if (map.lvl[i] === L && map.up[i] && map.g[i] !== T.STAIRS) ups.push(i);
-      if (!ups.length) continue;
-      const mat = new THREE.MeshLambertMaterial({ map: deckTex(L), transparent: true, opacity: 1 });
-      this.deckMats.push(mat);
-      this.upMesh = inst(ups, mat, (m, k, x, y) => place(m, k, x + 0.5, L * LH - 0.1, y + 0.5, 1, 0.2, 1));
-      const car = ups.filter(i => map.fstyle[i] && map.g[i] !== T.WALL && map.g[i] !== T.DECOR);
-      if (car.length) { const cm = new THREE.MeshLambertMaterial({ map: carpetTex(L), transparent: true, opacity: 1 }); this.deckMats.push(cm); inst(car, cm, (m, k, x, y) => place(m, k, x + 0.5, L * LH + 0.01, y + 0.5, 0.96, 0.03, 0.96)); }
-    }
-    // cliff faces under every deck edge that borders lower ground
-    { const faces = [];
-      for (let i = 0; i < MW * MH; i++) {
-        const L = map.lvl[i]; if (!L || map.g[i] === T.STAIRS) continue;
-        const x = i % MW, y = (i / MW) | 0;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const ni = (y + dy) * MW + x + dx;
-          if (x + dx < 0 || y + dy < 0 || x + dx >= MW || y + dy >= MH || map.g[ni] === T.STAIRS) continue;
-          const nl = nlv(ni); if (nl >= L) continue;
-          faces.push([x + 0.5 + dx * 0.46, y + 0.5 + dy * 0.46, dx, dy, nl * LH, L * LH - 0.2]);
-        }
-      }
-      if (faces.length) {
-        const mesh = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: tx.stone, color: '#9a96a8' }), faces.length);
-        faces.forEach(([fx, fz, dx, dy, y0, y1], k) => place(mesh, k, fx, (y0 + y1) / 2, fz, dx ? 0.1 : 1, y1 - y0, dx ? 1 : 0.1));
-        mesh.instanceMatrix.needsUpdate = true; W.add(mesh);
-      } }
-    // stairs: four steps climbing toward the upper deck
-    { const st = []; for (let i = 0; i < MW * MH; i++) if (map.stair[i] >= 0 && map.g[i] === T.STAIRS) st.push(i);
-      if (st.length) {
-        const mesh = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: tx.stone, color: '#b8b4c4' }), st.length * 4);
-        const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-        st.forEach((i, k) => {
-          const lo = map.stair[i], [dx, dy] = DIRS[map.stairD[i]], cx0 = i % MW + 0.5, cz0 = ((i / MW) | 0) + 0.5;
-          for (let s2 = 0; s2 < 4; s2++) {
-            const top = lo * LH + (s2 + 1) * LH / 4, off = -0.375 + s2 * 0.25;
-            place(mesh, k * 4 + s2, cx0 + dx * off, top / 2, cz0 + dy * off, dx ? 0.25 : 1, top, dx ? 1 : 0.25);
-          }
-        });
-        mesh.instanceMatrix.needsUpdate = true; W.add(mesh);
-      } }
-    // walls standing on decks
-    { const dw = []; for (let i = 0; i < MW * MH; i++) if (map.lvl[i] > 0 && map.g[i] === T.WALL) dw.push(i);
-      const cols = ['', '#aaa6b4', '#c49a6a', '#9a88c0', '#e8d890'];
-      if (dw.length) inst(dw, new THREE.MeshLambertMaterial({ map: tx.stone }), (m, k, x, y, i) => place(m, k, x + 0.5, map.lvl[i] * LH + 0.65, y + 0.5, 1, 1.3, 1), i => cols[map.lvl[i]]); }
-    // castle furniture and braziers
-    this.flames3 = []; this.torchPos = [];
-    for (let i = 0; i < MW * MH; i++) {
-      if (map.g[i] !== T.DECOR || !map.deco[i]) continue;
-      const kind = map.deco[i], x = i % MW + 0.5, z0 = ((i / MW) | 0) + 0.5, y0 = map.lvl[i] * LH, d = new THREE.Group();
+    const mkDeco = kind => {
+      const d = new THREE.Group(); let flame = null;
       if (kind === 1) {
         const bowl = new THREE.Mesh(CYL, lam('#3a3a44')); bowl.scale.set(0.5, 0.3, 0.5); bowl.position.y = 0.55;
         const leg = new THREE.Mesh(CYL, lam('#2a2a30')); leg.scale.set(0.15, 0.45, 0.15); leg.position.y = 0.22;
         const fl = new THREE.Mesh(CONE, new THREE.MeshBasicMaterial({ color: '#ff9a2a' })); fl.scale.set(0.4, 0.8, 0.4); fl.position.y = 1.0;
         const fl2 = new THREE.Mesh(CONE, new THREE.MeshBasicMaterial({ color: '#ffe36a' })); fl2.scale.set(0.22, 0.5, 0.22); fl2.position.y = 0.9;
-        d.add(leg, bowl, fl, fl2); this.flames3.push({ a: fl, b: fl2, ph: i * 0.37 }); this.torchPos.push([x, y0 + 1.1, z0]);
+        d.add(leg, bowl, fl, fl2); flame = { a: fl, b: fl2 };
       } else if (kind === 2) { const b2 = new THREE.Mesh(CYL, lam('#8b5a2b')); b2.scale.set(0.62, 0.8, 0.62); b2.position.y = 0.4; d.add(b2, box(0.66, 0.05, 0.66, lam('#3a3a44'), 0, 0.55, 0)); }
       else if (kind === 3) { d.add(box(0.9, 0.08, 0.7, lam('#8a5a2a'), 0, 0.5, 0), box(0.08, 0.5, 0.08, lam('#5a3b1e'), -0.38, 0.25, -0.28), box(0.08, 0.5, 0.08, lam('#5a3b1e'), 0.38, 0.25, 0.28), box(0.2, 0.12, 0.2, lam('#c8463d'), 0.2, 0.6, 0)); }
       else if (kind === 4) { const hd = new THREE.Mesh(SPH, lam('#a4a4b0')); hd.scale.setScalar(0.3); hd.position.y = 1.35; d.add(box(0.8, 0.25, 0.8, lam('#7a7a84'), 0, 0.12, 0), box(0.4, 0.8, 0.3, lam('#a4a4b0'), 0, 0.65, 0), hd, box(0.08, 0.7, 0.08, lam('#e8e8f4'), 0.3, 0.8, 0.1)); }
       else if (kind === 5) { d.add(box(0.8, 0.4, 0.55, lam('#7a4a22'), 0, 0.2, 0), box(0.82, 0.12, 0.57, lam('#a8733e'), 0, 0.45, 0), box(0.12, 0.14, 0.04, lam('#ffd23f', { emissive: '#4a3a00' }), 0, 0.35, 0.29)); }
       else if (kind === 6) { d.add(box(0.95, 0.3, 0.8, lam('#ffd23f', { emissive: '#3a2a00' }), 0, 0.15, 0), box(0.8, 0.6, 0.55, lam('#a01830'), 0, 0.6, 0.05), box(0.95, 1.5, 0.15, lam('#7a1020'), 0, 1.05, -0.35), box(1.0, 0.12, 0.2, lam('#ffd23f', { emissive: '#3a2a00' }), 0, 1.85, -0.35)); }
       else { d.add(box(0.9, 1.3, 0.35, lam('#5a3b1e'), 0, 0.65, 0)); for (let r2 = 0; r2 < 3; r2++) d.add(box(0.8, 0.14, 0.05, lam(['#c8463d', '#3f7fc4', '#d9a63a'][r2]), 0, 0.3 + r2 * 0.35, 0.2)); }
-      d.position.set(x, y0, z0); W.add(d);
+      return { d, flame };
+    };
+    const stairMat = new THREE.MeshLambertMaterial({ map: tx.stone, color: '#b8b4c4' });
+    const wallCols = ['', '#d6b890', '#b8a0e0', '#f0e0a0'];
+    const buildFloor = (z, parent) => {
+      const L = map.fl[z];
+      // slabs by room style, walls
+      if (z > 0) {
+        const byStyle = [[], [], [], [], []], walls = [];
+        for (let i = 0; i < MW * MH; i++) {
+          if (!map.fp[i]) continue;
+          const t = L[i];
+          if (t === T.WALL) walls.push(i);
+          else if (t === T.FLOOR || t === T.DECOR) byStyle[map.rs[z][i] % 5].push(i);
+        }
+        byStyle.forEach((list, st) => {
+          if (!list.length) return;
+          const mesh = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: styleTex(st) }), list.length);
+          list.forEach((i, k) => place(mesh, k, i % MW + 0.5, z * LH - 0.1, ((i / MW) | 0) + 0.5, 1, 0.2, 1));
+          mesh.instanceMatrix.needsUpdate = true; parent.add(mesh);
+        });
+        if (walls.length) {
+          const mesh = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: tx.stone, color: wallCols[z] }), walls.length);
+          walls.forEach((i, k) => place(mesh, k, i % MW + 0.5, z * LH + 0.65, ((i / MW) | 0) + 0.5, 1, 1.3, 1));
+          mesh.instanceMatrix.needsUpdate = true; parent.add(mesh);
+        }
+      }
+      // stairs touching this floor (steps run from the lower floor to the upper one)
+      const st = []; for (let i = 0; i < MW * MH; i++) if (map.stair[i] >= 0 && (map.stair[i] === z || map.stair[i] + 1 === z) && L[i] === T.STAIRS) st.push(i);
+      if (st.length) {
+        const mesh = new THREE.InstancedMesh(BOX, stairMat, st.length * 4), DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+        st.forEach((i, k) => {
+          const lo = map.stair[i], [dx, dy] = DIRS[map.stairD[i]], cx0 = i % MW + 0.5, cz0 = ((i / MW) | 0) + 0.5;
+          for (let s2 = 0; s2 < 4; s2++) { const top = lo * LH + (s2 + 1) * LH / 4, off = -0.375 + s2 * 0.25; place(mesh, k * 4 + s2, cx0 + dx * off, top / 2, cz0 + dy * off, dx ? 0.25 : 1, top, dx ? 1 : 0.25); }
+        });
+        mesh.instanceMatrix.needsUpdate = true; parent.add(mesh);
+      }
+      // furniture and braziers
+      for (let i = 0; i < MW * MH; i++) {
+        if (L[i] !== T.DECOR || !map.decoL[z][i] || !map.fp[i]) continue;
+        const { d, flame } = mkDeco(map.decoL[z][i]), x = i % MW + 0.5, z0 = ((i / MW) | 0) + 0.5;
+        d.position.set(x, z * LH, z0); parent.add(d);
+        if (flame) { flame.ph = i * 0.37; this.flames3.push(flame); this.torchPos.push([x, z * LH + 1.1, z0, z]); }
+      }
+    };
+    if (castle) {
+      buildFloor(0, W);
+      for (let z = 1; z < map.fl.length; z++) { const grp = new THREE.Group(); grp.visible = false; this.scene.add(grp); this.floorGroups.push(grp); buildFloor(z, grp); }
     }
     // portals
     this.portals = [];
@@ -408,6 +406,8 @@ export class Renderer3D {
     this.pellets = new THREE.InstancedMesh(SPH, new THREE.MeshBasicMaterial({ color: '#ffd9a0' }), Math.max(1, map.pellets.size)); W.add(this.pellets); this.pelN = -1;
     this.spiral = map.type === 'arena' ? arenaSpiral() : [];
     this.place = place;
+
+    this.staticKids = W.children.slice();
 
     // pools for transient things
     const P = (make) => new Pool(W, make);
@@ -453,6 +453,15 @@ export class Renderer3D {
 
     // camera: fixed angle, follows the focus pawn
     const portrait = innerHeight > innerWidth;
+    const castle = map.fl && map.fl.length > 1, vz = castle && me ? (me.z | 0) : 0;
+    const floorsOf = p => { if (castle && p.stairs) { const lo = map.stair[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)]; if (lo >= 0) return [lo, lo + 1]; } return [p.z | 0]; };
+    const myF = castle && me ? floorsOf(me) : [0];
+    const onMyFloor = p => !castle || floorsOf(p).some(z => myF.includes(z));
+    if (castle) {
+      for (const k of this.staticKids || []) k.visible = vz === 0;
+      this.floorGroups.forEach((gr, z) => { if (gr) gr.visible = z === vz; });
+      this.scene.background.set(vz > 0 ? '#07050e' : '#21173a');
+    }
     const heightOf = p => {
       if (!p) return 0;
       if (p.stairs) {
@@ -486,7 +495,8 @@ export class Renderer3D {
     if (me && me.fx && me.fx.blind > 0) { amb = 0.03; sun = 0; myL = 1.2; }
     if (hiding && me && me.it && v.hideT > 0) { amb = 0; myL = 0; }
     this.amb.intensity = amb; this.amb.color.set(this.base.ambCol); this.sun.intensity = sun;
-    if (!fog && this.dusk) fog = ['#21173a', 18, 52];
+    if (!fog && this.dusk && vz === 0) fog = ['#21173a', 18, 52];
+    if (vz > 0) fog = null;
     this.scene.fog = fog ? new THREE.Fog(fog[0], fog[1], fog[2]) : null;
     if (me) { this.myLight.position.set(U(me.x), heightOf(me) + 1.6, U(me.y)); }
     this.myLight.intensity = myL;
@@ -503,7 +513,7 @@ export class Renderer3D {
     if (this.flames3 && this.flames3.length) {
       for (const f of this.flames3) { const k2 = 1 + Math.sin(t * 14 + f.ph) * 0.18 + Math.sin(t * 23 + f.ph * 2) * 0.1; f.a.scale.set(0.4 * k2, 0.8 * k2, 0.4 * k2); f.b.scale.set(0.22, 0.5 * (2 - k2), 0.22); }
       if (!this.tl) { this.tl = []; for (let i = 0; i < 5; i++) { const l = new THREE.PointLight('#ff9a40', 0, 9, 1.4); this.scene.add(l); this.tl.push(l); } }
-      const cxz = this.cam, near3 = this.torchPos.map(p => [p, (p[0] - cxz.x) ** 2 + (p[1] - cxz.y) ** 2 * 0.3 + (p[2] - cxz.z) ** 2]).sort((a, b) => a[1] - b[1]);
+      const cxz = this.cam, near3 = this.torchPos.filter(p => p[3] === vz).map(p => [p, (p[0] - cxz.x) ** 2 + (p[1] - cxz.y) ** 2 * 0.3 + (p[2] - cxz.z) ** 2]).sort((a, b) => a[1] - b[1]);
       this.tl.forEach((l, i) => { const e = near3[i]; if (!e) { l.intensity = 0; return; } l.position.set(e[0][0], e[0][1] + 0.2, e[0][2]); l.intensity = 7 + Math.sin(t * 15 + i * 2) * 1.4 + Math.sin(t * 27 + i) * 0.8; });
       if (Math.random() < dt * 14 && near3[0]) { const p = near3[Math.floor(Math.random() * Math.min(4, near3.length))][0]; this.parts.push({ x: p[0] * TS, y: p[2] * TS, h: p[1] * TS, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, vh: 18 + Math.random() * 14, life: 1.1, max: 1.1, col: Math.random() < 0.5 ? '#ff9a2a' : '#ffd23f', size: 1 }); }
     }
@@ -522,7 +532,9 @@ export class Renderer3D {
     }
     const sdSet = this.spiral.length && v.sd ? new Set(this.spiral.slice(0, v.sd)) : null;
     let nb = 0, ns = 0;
-    for (const i of v.walls) {
+    for (const wk of v.walls) {
+      if (wk >= MW * MH) continue;
+      const i = wk;
       const x = i % MW + 0.5, y = ((i / MW) | 0) + 0.5;
       if (sdSet && sdSet.has(i)) this.place(this.stoneDyn, ns++, x, 0.65, y, 1, 1.3, 1);
       else if (nb < 400) this.place(this.barr, nb++, x, 0.5, y, 0.95, 1, 0.95);
@@ -534,6 +546,7 @@ export class Renderer3D {
     const underUp = p => (p.z || 0) === 0 && map.up[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)];
     const hiddenFor = p => {
       if (p.id === v.me) return false;
+      if (!onMyFloor(p)) return true;
       if (v.mode === 'dm' && me && !this.inSight(me.x, me.y - 6, p.x, p.y - 6)) return true;
       if (reveal) return false;
       if (p.fx && p.fx.invis > 0) return true;
@@ -544,7 +557,7 @@ export class Renderer3D {
     for (const dm2 of this.deckMats || []) dm2.opacity = me && underUp(me) && !me.stairs ? 0.3 : 1;
 
     const pl = this.pool, hOf = p => heightOf(p);
-    pl.runes.sync(v.runes, (o, r) => { o.position.set(U(r.x), (r.z || 0) * 1.4 + 0.45 + Math.sin(t * 3 + r.id) * 0.08, U(r.y)); o.rotation.y = t * 1.5 + r.id; o.userData.gl.material.color.set(RUNES[r.k].col); });
+    pl.runes.sync(castle ? v.runes.filter(r => (r.z | 0) === vz) : v.runes, (o, r) => { o.position.set(U(r.x), (r.z || 0) * 1.4 + 0.45 + Math.sin(t * 3 + r.id) * 0.08, U(r.y)); o.rotation.y = t * 1.5 + r.id; o.userData.gl.material.color.set(RUNES[r.k].col); });
     pl.gifts.sync(v.gifts, (o, gf) => { o.position.set(U(gf.x), 0.25 + Math.abs(Math.sin(t * 3 + gf.id)) * 0.1, U(gf.y)); o.userData.b.material = lam(['#d8453b', '#3f7fe0', '#4f9a45', '#8e58b0'][gf.c % 4]); });
     pl.items.sync(v.items, (o, it) => { o.position.set(U(it.x), 0.35, U(it.y)); o.rotation.y = t * 2; o.userData.b.material = lam(ITEMS[it.k].col, { emissive: '#2a1a00' }); });
     pl.bombs.sync(v.bombs, (o, b) => { o.position.set(U(b.x), 0, U(b.y)); const s2 = 0.6 + (b.t < 0.7 ? Math.abs(Math.sin(t * 20)) * 0.15 : Math.sin(t * 6) * 0.04); o.userData.s.scale.setScalar(s2); });

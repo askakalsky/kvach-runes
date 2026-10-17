@@ -2,7 +2,7 @@
 export const TS = 16, MW = 48, MH = 34;
 export const T = {
   GRASS: 0, DIRT: 1, WALL: 2, WATER: 3, BUSH: 4, ICE: 5, TREE: 6, FLOOR: 7, PORTAL: 8,
-  HEDGE: 9, ROAD: 10, BRIDGE: 11, TOMB: 12, WHEAT: 13, DECOR: 14, SAND: 15, MUSH: 16, STAIRS: 17,
+  HEDGE: 9, ROAD: 10, BRIDGE: 11, TOMB: 12, WHEAT: 13, DECOR: 14, SAND: 15, MUSH: 16, STAIRS: 17, VOID: 18,
 };
 export const MAP_TYPES = {
   meadow: 'Луг', village: 'Деревня', maze: 'Лабиринт', islands: 'Острова', graveyard: 'Кладбище',
@@ -12,7 +12,7 @@ export const MAP_TYPES = {
 export const ARENA = { x0: 8, y0: 5, x1: 40, y1: 27 };
 
 const SOLID = new Uint8Array(32);
-for (const t of [T.WALL, T.TREE, T.HEDGE, T.TOMB, T.DECOR]) SOLID[t] = 1;
+for (const t of [T.WALL, T.TREE, T.HEDGE, T.TOMB, T.DECOR, T.VOID]) SOLID[t] = 1;
 export const isSolidT = t => SOLID[t] === 1;
 export const isHideT = t => t === T.BUSH || t === T.WHEAT;
 
@@ -30,7 +30,7 @@ function makeCtx(seed) {
   const R = rng(seed);
   const g = new Uint8Array(MW * MH);
   const c = {
-    R, g, up: new Uint8Array(MW * MH), lvl: new Uint8Array(MW * MH), stair: new Int8Array(MW * MH).fill(-1), stairD: new Uint8Array(MW * MH), deco: new Uint8Array(MW * MH), fstyle: new Uint8Array(MW * MH),
+    R, g, up: new Uint8Array(MW * MH), lvl: new Uint8Array(MW * MH), stair: new Int8Array(MW * MH).fill(-1), stairD: new Uint8Array(MW * MH), deco: new Uint8Array(MW * MH), fstyle: new Uint8Array(MW * MH), fp: new Uint8Array(MW * MH),
     ri: (a, b) => a + Math.floor(R() * (b - a + 1)),
     inb: (x, y) => x > 0 && y > 0 && x < MW - 1 && y < MH - 1,
     get: (x, y) => (x < 0 || y < 0 || x >= MW || y >= MH) ? T.WALL : g[y * MW + x],
@@ -254,111 +254,120 @@ function genMagic(c) {
   c.scatter(12, T.DECOR, [T.GRASS, T.DIRT]);
 }
 
-// Four-tier castle: every tier is a smaller deck stacked on the one below (level 1..4).
-// c.lvl = deck height of a tile (0 = open ground); stairs link level L to L+1.
-export const TIERS = [[7, 4, 34, 26], [11, 7, 26, 20], [15, 10, 18, 14], [19, 13, 10, 8]];
+// Four-storey building: the same footprint on every floor, floor 1 stands on the ground.
+// Floor z lives in its own tile layer (c.fl[z]; layer 0 is the terrain array g itself).
+// Stairwells link floor lo with lo+1 and exist as STAIRS tiles on both layers.
+export const FP = [7, 4, 34, 26];       // x, y, w, h of the building
+export const FLOORS = 4;
 export const DECO = { NONE: 0, BRAZIER: 1, BARREL: 2, TABLE: 3, STATUE: 4, CHEST: 5, THRONE: 6, BOOKS: 7 };
-const UP_DIR = { N: 1, S: 3, W: 0, E: 2 }; // direction index of "uphill" (0 +x, 1 +y, 2 -x, 3 -y)
+export const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];   // uphill direction index: 0 +x, 1 +y, 2 -x, 3 -y
 
 function genFort(c) {
-  const { ri, R, up, lvl, g } = c;
+  const { ri, R, g } = c;
+  const [fx, fy, fw, fh] = FP;
   for (let i = 0; i < 9; i++) c.blob(ri(2, MW - 3), ri(2, MH - 3), 1.3 + R() * 2, T.DIRT);
-  // decks
-  TIERS.forEach(([x0, y0, w, h], n) => {
-    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
-      const i = y * MW + x; lvl[i] = n + 1; up[i] = 1; g[i] = T.ROAD;
-    }
-  });
-  const near = new Set();
-  // stairs: two per transition, on opposite sides of the next tier, climbing toward it
-  const stairSides = [['N', 'S'], ['W', 'E'], ['S', 'N'], ['E', 'W']];
-  const stairTiles = [];
-  stairSides.forEach((sides, n) => {
-    const [x0, y0, w, h] = TIERS[n];
-    for (const side of sides) {
-      for (let tries = 0; tries < 40; tries++) {
-        let cells, appr;
-        if (side === 'N' || side === 'S') {
-          const sx = ri(x0 + 5, x0 + w - 7), y = side === 'N' ? y0 - 1 : y0 + h, ay = side === 'N' ? y - 1 : y + 1;
-          cells = [[sx, y], [sx + 1, y]]; appr = [[sx, ay], [sx + 1, ay]];
-        } else {
-          const sy = ri(y0 + 4, y0 + h - 6), x = side === 'W' ? x0 - 1 : x0 + w, ax = side === 'W' ? x - 1 : x + 1;
-          cells = [[x, sy], [x, sy + 1]]; appr = [[ax, sy], [ax, sy + 1]];
-        }
-        if (![...cells, ...appr].every(([x, y]) => c.inb(x, y) && lvl[y * MW + x] === n && g[y * MW + x] !== T.STAIRS)) continue;
-        for (const [x, y] of cells) {
-          const i = y * MW + x;
-          g[i] = T.STAIRS; c.stair[i] = n; c.stairD[i] = UP_DIR[side]; lvl[i] = n; up[i] = n > 0 ? 1 : 0;
-          stairTiles.push([x, y]);
-          for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) near.add((y + dy) * MW + x + dx);
-        }
-        break;
-      }
-    }
-  });
-  const free = (x, y) => c.inb(x, y) && !near.has(y * MW + x) && g[y * MW + x] !== T.STAIRS;
-  // rooms: each tier's ring (the part not covered by the next tier) is split by cross walls with doorways
-  const wallAt = (x, y, n) => { if (free(x, y) && lvl[y * MW + x] === n) { g[y * MW + x] = T.WALL; } };
-  for (let n = 1; n <= 3; n++) {
-    const [x0, y0, w, h] = TIERS[n - 1], [nx0, ny0, nw, nh] = TIERS[n];
-    const lw = nx0 - x0, tb = ny0 - y0, bb = (y0 + h) - (ny0 + nh);
-    // left / right bands (full height)
-    for (const bandX of [x0, nx0 + nw]) {
-      const bw = bandX === x0 ? lw : (x0 + w) - (nx0 + nw);
-      for (let y = y0 + 5; y < y0 + h - 4; y += 5) {
-        const door = ri(0, bw - 1);
-        for (let k = 0; k < bw; k++) if (k !== door) wallAt(bandX + k, y, n);
-      }
-    }
-    // top / bottom bands (between the side bands)
-    for (const [bandY, bh] of [[y0, tb], [ny0 + nh, bb]]) {
-      for (let x = nx0 + 5; x < nx0 + nw - 4; x += 6) {
-        const door = ri(0, bh - 1);
-        for (let k = 0; k < bh; k++) if (k !== door && bh > 2) wallAt(x, bandY + k, n);
-      }
+  const layers = [g];
+  for (let z = 1; z < FLOORS; z++) layers.push(new Uint8Array(MW * MH).fill(T.VOID));
+  c.fl = layers;
+  c.rs = layers.map(() => new Uint8Array(MW * MH));
+  c.decoL = layers.map(() => new Uint8Array(MW * MH));
+  const fp = c.fp, inFp = (x, y) => x >= fx && x < fx + fw && y >= fy && y < fy + fh;
+  for (let y = fy; y < fy + fh; y++) for (let x = fx; x < fx + fw; x++) fp[y * MW + x] = 1;
+  const inner = (x, y) => x > fx && x < fx + fw - 1 && y > fy && y < fy + fh - 1;
+
+  // ---- stairwells (two per floor transition, kept apart)
+  const wells = [];
+  for (let lo = 0; lo < FLOORS - 1; lo++) for (let k = 0; k < 2; k++) {
+    for (let tries = 0; tries < 800; tries++) {
+      const d = ri(0, 3), [dx, dy] = DIRS[d], px = -dy, py = dx;               // uphill and perpendicular
+      const cx = ri(fx + 5, fx + fw - 7), cy = ri(fy + 5, fy + fh - 7);
+      const cells = [];
+      for (let r = -1; r <= 1; r++) for (let i = -1; i <= 2; i++) cells.push([cx + dx * r + px * i, cy + dy * r + py * i]);
+      if (!cells.every(([x, y]) => inner(x, y))) continue;
+      if (wells.some(w => Math.hypot(w.cx - cx, w.cy - cy) < 10 - Math.floor(tries / 160) * 2)) continue;
+      wells.push({ lo, d, cx, cy, dx, dy, px, py });
+      break;
     }
   }
-  // furniture, braziers and carpets
-  const put = (x, y, kind) => {
-    const i = y * MW + x;
-    if (!free(x, y) || g[i] === T.WALL || g[i] === T.DECOR) return false;
-    if (!c.free8(x, y)) return false;
-    g[i] = T.DECOR; c.deco[i] = kind; return true;
+  const stamp = (layer, z, w, set) => {
+    // clear a generous room around the well, then build the stairwell
+    for (let r = -2; r <= 2; r++) for (let i = -2; i <= 3; i++) { const x = w.cx + w.dx * r + w.px * i, y = w.cy + w.dy * r + w.py * i; if (inner(x, y)) layer[y * MW + x] = T.FLOOR; }
+    set();
   };
-  for (let n = 1; n <= 4; n++) {
-    const [x0, y0, w, h] = TIERS[n - 1], nxt = TIERS[n];
-    const inNext = (x, y) => nxt && x >= nxt[0] && x < nxt[0] + nxt[2] && y >= nxt[1] && y < nxt[1] + nxt[3];
-    const tiles = [];
-    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (!inNext(x, y)) tiles.push([x, y]);
-    // braziers hug the cliff of the next tier and the outer rim
-    let br = 0;
-    for (const [x, y] of tiles) {
-      const edge = x === x0 || y === y0 || x === x0 + w - 1 || y === y0 + h - 1;
-      if (edge && (x + y * 2) % 7 === n % 7 && br < 14 && put(x, y, DECO.BRAZIER)) br++;
+  // ---- per floor: rooms by recursive splitting, then wells, furniture, connectivity
+  for (let z = 0; z < FLOORS; z++) {
+    const L = layers[z], rs = c.rs[z], dl = c.decoL[z];
+    for (let y = fy; y < fy + fh; y++) for (let x = fx; x < fx + fw; x++) { const i = y * MW + x; L[i] = (x === fx || y === fy || x === fx + fw - 1 || y === fy + fh - 1) ? T.WALL : T.FLOOR; }
+    const leaves = [];
+    const split = (x, y, w, h, depth) => {
+      const canV = w >= 13, canH = h >= 11;
+      if (depth > 4 || (!canV && !canH) || (depth > 2 && R() < 0.22)) { leaves.push([x, y, w, h]); return; }
+      const vert = canV && (!canH || w / h > 1.25 || (w / h > 0.8 && R() < 0.5));
+      if (vert) {
+        const s = ri(x + 5, x + w - 6);
+        split(x, y, s - x, h, depth + 1); split(s + 1, y, x + w - s - 1, h, depth + 1);
+        for (let yy = y; yy < y + h; yy++) L[yy * MW + s] = T.WALL;
+        for (let d2 = 0, n = h > 14 ? 2 : 1; d2 < n; d2++) { const dyy = ri(y + 1, y + h - 3); L[dyy * MW + s] = T.FLOOR; L[(dyy + 1) * MW + s] = T.FLOOR; }
+      } else {
+        const s = ri(y + 4, y + h - 5);
+        split(x, y, w, s - y, depth + 1); split(x, s + 1, w, y + h - s - 1, depth + 1);
+        for (let xx = x; xx < x + w; xx++) L[s * MW + xx] = T.WALL;
+        for (let d2 = 0, n = w > 18 ? 2 : 1; d2 < n; d2++) { const dxx = ri(x + 1, x + w - 3); L[s * MW + dxx] = T.FLOOR; L[s * MW + dxx + 1] = T.FLOOR; }
+      }
+    };
+    split(fx + 1, fy + 1, fw - 2, fh - 2, 0);
+    leaves.forEach(([x, y, w, h], k) => { for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) rs[yy * MW + xx] = (k + z * 2) % 5; });
+    for (let i = 0; i < MW * MH; i++) if (L[i] === T.FLOOR && fp[i] && !rs[i]) { const n = [i - 1, i + 1, i - MW, i + MW].find(j => L[j] === T.FLOOR && rs[j]); if (n !== undefined) rs[i] = rs[n]; }
+    // stairwells touching this floor
+    for (const w of wells) {
+      if (w.lo !== z && w.lo + 1 !== z) continue;
+      const up = w.lo === z;                                          // true: this floor holds the climbing side
+      stamp(L, z, w, () => {
+        for (let r = -1; r <= 1; r++) for (let i = -1; i <= 2; i++) {
+          const x = w.cx + w.dx * r + w.px * i, y = w.cy + w.dy * r + w.py * i, idx = y * MW + x;
+          if (i === -1 || i === 2) L[idx] = T.WALL;                  // side walls on both floors
+          else if (r === 0) { L[idx] = T.STAIRS; c.stair[idx] = w.lo; c.stairD[idx] = w.d; }
+          else if (r === -1) L[idx] = up ? T.FLOOR : T.WALL;         // foot of the stairs
+          else L[idx] = up ? T.WALL : T.FLOOR;                       // top of the stairs
+          rs[idx] = rs[idx] || 1;
+        }
+      });
     }
-    for (const [x, y] of tiles) {
-      const r = R();
-      if (r < 0.045) put(x, y, [DECO.BARREL, DECO.CHEST, DECO.TABLE][ri(0, 2)]);
-      else if (r < 0.06) put(x, y, n >= 3 ? DECO.STATUE : DECO.BOOKS);
+    // furniture
+    const free8 = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const t = L[(y + dy) * MW + x + dx]; if (t !== T.FLOOR) return false; } return true; };
+    const wellNear = (x, y) => wells.some(w => (w.lo === z || w.lo + 1 === z) && Math.abs(x - w.cx) <= 4 && Math.abs(y - w.cy) <= 4);
+    const put = (x, y, kind) => { const i = y * MW + x; if (!inner(x, y) || wellNear(x, y) || !free8(x, y)) return false; L[i] = T.DECOR; dl[i] = kind; return true; };
+    let bigRoom = -1, bigArea = 0;
+    leaves.forEach(([x, y, w, h], k) => {
+      if (w * h > bigArea) { bigArea = w * h; bigRoom = k; }
+      // braziers in two corners of every room
+      put(x + 1, y + 1, DECO.BRAZIER); put(x + w - 2, y + h - 2, DECO.BRAZIER);
+      const n = Math.floor(w * h / 22);
+      for (let q = 0; q < n * 3 && n > 0; q++) {
+        const px = ri(x + 1, x + w - 2), py = ri(y + 1, y + h - 2), r = R();
+        put(px, py, r < 0.3 ? DECO.BARREL : r < 0.5 ? DECO.CHEST : r < 0.7 ? DECO.TABLE : r < 0.85 ? DECO.BOOKS : DECO.STATUE);
+      }
+    });
+    if (z === FLOORS - 1 && bigRoom >= 0) { const [x, y, w] = leaves[bigRoom]; const ti = (y + 1) * MW + x + (w >> 1); if (L[ti] === T.FLOOR) { L[ti] = T.DECOR; dl[ti] = DECO.THRONE; } }
+    // ground floor: entrances in the outer wall, every side
+    if (z === 0) {
+      for (const side of [0, 1, 2, 3]) {
+        const n = side < 2 ? 2 : 1;
+        for (let d2 = 0; d2 < n; d2++) {
+          if (side === 0) { const x = ri(fx + 3, fx + fw - 5); for (let k = 0; k < 2; k++) { L[fy * MW + x + k] = T.FLOOR; L[(fy + 1) * MW + x + k] = T.FLOOR; } }
+          else if (side === 1) { const x = ri(fx + 3, fx + fw - 5); for (let k = 0; k < 2; k++) { L[(fy + fh - 1) * MW + x + k] = T.FLOOR; L[(fy + fh - 2) * MW + x + k] = T.FLOOR; } }
+          else if (side === 2) { const y = ri(fy + 3, fy + fh - 5); for (let k = 0; k < 2; k++) { L[(y + k) * MW + fx] = T.FLOOR; L[(y + k) * MW + fx + 1] = T.FLOOR; } }
+          else { const y = ri(fy + 3, fy + fh - 5); for (let k = 0; k < 2; k++) { L[(y + k) * MW + fx + fw - 1] = T.FLOOR; L[(y + k) * MW + fx + fw - 2] = T.FLOOR; } }
+        }
+      }
     }
-    // a carpet runs through every ring
-    for (const [x, y] of tiles) if (g[y * MW + x] !== T.WALL && g[y * MW + x] !== T.DECOR && g[y * MW + x] !== T.STAIRS && lvl[y * MW + x] === n) {
-      const bx = Math.min(x - x0, x0 + w - 1 - x), by = Math.min(y - y0, y0 + h - 1 - y);
-      if (Math.min(bx, by) === 1 || (n === 4 && bx > 1 && by > 1)) c.fstyle[y * MW + x] = 1;
-    }
-  }
-  // throne room on the top tier
-  { const [x0, y0, w, h] = TIERS[3];
-    for (const [dx, dy] of [[1, 1], [w - 2, 1], [1, h - 2], [w - 2, h - 2]]) { const i = (y0 + dy) * MW + x0 + dx; g[i] = T.WALL; }
-    for (const dx of [2, w - 3]) { const i = (y0 + 1) * MW + x0 + dx; g[i] = T.DECOR; c.deco[i] = DECO.BRAZIER; }
-    const ti = (y0) * MW + x0 + (w >> 1); g[ti] = T.DECOR; c.deco[ti] = DECO.THRONE; }
-  // the cellar under the castle: pillars and barrels, a few braziers by the ground-level stairs
-  for (let y = TIERS[0][1] + 2; y < TIERS[0][1] + TIERS[0][3] - 2; y += 4) for (let x = TIERS[0][0] + 3; x < TIERS[0][0] + TIERS[0][2] - 2; x += 5) {
-    const i = y * MW + x;
-    if (g[i] === T.ROAD && !near.has(i) && R() < 0.5 && lvl[i] > 0) { g[i] = T.WALL; }
-  }
-  for (const [x, y] of stairTiles) if (c.stair[y * MW + x] === 0) {
-    for (const [dx, dy] of [[-2, 0], [3, 0], [0, -2], [0, 3]]) { const px = x + dx, py = y + dy; if (c.inb(px, py) && lvl[py * MW + px] === 0 && g[py * MW + px] !== T.STAIRS && R() < 0.35) { const i = py * MW + px; g[i] = T.DECOR; c.deco[i] = DECO.BRAZIER; } }
+    // everything walkable on this floor must be one connected area: wall off islands
+    const seeds = []; for (let i = 0; i < MW * MH; i++) if (fp[i] && L[i] === T.STAIRS) { seeds.push(i); break; }
+    if (!seeds.length) for (let i = 0; i < MW * MH; i++) if (fp[i] && L[i] === T.FLOOR) { seeds.push(i); break; }
+    const seen = new Uint8Array(MW * MH), q = [...seeds];
+    q.forEach(i => seen[i] = 1);
+    while (q.length) { const i = q.pop(); for (const j of [i - 1, i + 1, i - MW, i + MW]) if (!seen[j] && fp[j] && (L[j] === T.FLOOR || L[j] === T.STAIRS)) { seen[j] = 1; q.push(j); } }
+    for (let i = 0; i < MW * MH; i++) if (fp[i] && (L[i] === T.FLOOR || L[i] === T.STAIRS) && !seen[i]) { L[i] = T.WALL; c.stair[i] = -1; }
   }
   c.bushes(7);
   c.scatter(22, T.TREE, [T.GRASS]);
@@ -536,7 +545,8 @@ export function genMap(seed, type = 'meadow', theme = '', mode = '') {
   if (type !== 'arena' && type !== 'pacman' && type !== 'neon') genBelts(c, belt, type === 'maze' ? 4 : 7);
 
   const torches = [];
-  for (let i = 0; i < MW * MH; i++) if (g[i] === T.DECOR && c.deco[i] === 1) torches.push([(i % MW) * TS + 8, ((i / MW) | 0) * TS + 8, c.lvl[i]]);
+  const fl = c.fl || [g], decoL = c.decoL || [c.deco], rs = c.rs || [new Uint8Array(MW * MH)];
+  fl.forEach((L, z) => { for (let i = 0; i < MW * MH; i++) if (L[i] === T.DECOR && decoL[z][i] === 1) torches.push([(i % MW) * TS + 8, ((i / MW) | 0) * TS + 8, z]); });
   const crateSet = new Set(crates);
   const spawns = [], walk = [], hides = [];
   for (let i = 0; i < MW * MH; i++) {
@@ -545,11 +555,13 @@ export function genMap(seed, type = 'meadow', theme = '', mode = '') {
     if (pac && t === T.FLOOR) continue;
     const pt = [(i % MW) * TS + 8, ((i / MW) | 0) * TS + 8];
     if (!crateSet.has(i)) walk.push(pt);
-    if (!isHideT(t)) { if (!(type === 'fort' && c.up[i])) spawns.push(pt); } else hides.push(pt);
+    if (!isHideT(t)) { if (!c.fp[i]) spawns.push(pt); } else hides.push(pt);
     if (c.up[i] && !isHideT(t)) hides.push(pt);
   }
+  const walkZ = [walk];
+  for (let z = 1; z < fl.length; z++) { const w = []; for (let i = 0; i < MW * MH; i++) if (fl[z][i] === T.FLOOR) w.push([(i % MW) * TS + 8, ((i / MW) | 0) * TS + 8]); walkZ.push(w); }
   return {
-    g, up: c.up, lvl: c.lvl, stair: c.stair, stairD: c.stairD, deco: c.deco, fstyle: c.fstyle, torches, belt, dyn: new Map(), crates: crateSet, portals, spawns, walk, hides, type, theme,
+    g, fl, fp: c.fp, rs, decoL, walkZ, up: c.up, lvl: c.lvl, stair: c.stair, stairD: c.stairD, deco: c.deco, fstyle: c.fstyle, torches, belt, dyn: new Map(), crates: crateSet, portals, spawns, walk, hides, type, theme,
     pellets: new Set(pac ? pac.pellets : []), power: new Set(pac ? pac.power : []),
     home: pac && pac.home, door: pac && pac.door, bases, room,
   };
@@ -600,13 +612,19 @@ function keepLargestRegion(g) {
 // z: 0 ground, 1..4 deck level, -1 on stairs (any non-solid tile passable).
 // A deck tile can be walked on at its own level, and under it on the ground (z = 0).
 export const BELT_DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+// z >= 0: floor z (0 = ground floor / terrain). z < 0: on the stairs between floors lo and lo+1, lo = -z - 1.
+export const zOf = (map, p) => {
+  if (p.stairs) { const lo = map.stair[Math.max(0, Math.min(MH - 1, Math.floor(p.y / TS))) * MW + Math.max(0, Math.min(MW - 1, Math.floor(p.x / TS)))]; if (lo >= 0) return -1 - lo; }
+  return p.z | 0;
+};
 export function solidIdx(map, i, z = 0) {
-  if (SOLID[map.g[i]] === 1 || map.dyn.has(i) || map.crates.has(i)) return true;
-  if (z < 0) return false;
-  const st = map.stair[i];
-  if (z === 0) return st > 0;
-  if (st >= 0) return !(st === z || st + 1 === z);
-  return map.lvl[i] !== z;
+  if (z >= 0) {
+    if (map.crates.has(i) || map.dyn.has(z > 0 ? i + z * MW * MH : i)) return true;
+    return SOLID[(z > 0 ? map.fl[z] : map.g)[i]] === 1;
+  }
+  const lo = -z - 1, A = map.fl[lo], B = map.fl[lo + 1];
+  if (!A || !B) return SOLID[map.g[i]] === 1;
+  return SOLID[A[i]] === 1 && SOLID[B[i]] === 1;
 }
 export function solidAt(map, tx, ty, z) {
   if (tx < 0 || ty < 0 || tx >= MW || ty >= MH) return true;

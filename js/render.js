@@ -1,5 +1,5 @@
 // Pixel-art renderer: prerendered map layers, pawns, cosmetics, mode props, particles, lighting.
-import { TS, MW, MH, T, rng, isHideT, isSolidT, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED } from './map.js';
+import { TS, MW, MH, T, rng, isHideT, isSolidT, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED, FP } from './map.js';
 import { RUNES, GLYPHS, ITEMS, TEAM_COLS, MOB_COLS, HEROES, EMOTES } from './sim.js';
 import { CAPES } from './skins.js';
 import { drawStick } from './input.js';
@@ -428,52 +428,57 @@ export function buildLayers(map, seed) {
     }
   }
 
-  // decks of the multi-storey castle
-  let hasUp = false;
-  const lvlAt = (x, y) => (x < 0 || y < 0 || x >= MW || y >= MH) ? 0 : map.lvl[y * MW + x];
-  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
-    const i = y * MW + x, L = map.lvl[i];
-    if (!L || !upAt(x, y)) continue;
-    hasUp = true;
-    const px = x * TS, py = y * TS, pl = LVL[L] || LVL[1], tt = at(x, y);
-    if (tt === T.STAIRS) { stairsDraw(u, px, py, map.stairD[i]); continue; }
-    // floor
-    P(u, pl.base, px, py, TS, TS);
-    if (L === 1) { for (let k = 0; k < 2; k++) { P(u, pl.line, px, py + k * 8 + 7, TS, 1); P(u, pl.line, px + ((k * 5 + x * 3 + y) % 2 ? 4 : 11), py + k * 8, 1, 8); } }
-    else if (L === 2) { for (let k = 0; k < 4; k++) { P(u, pl.line, px, py + k * 4 + 3, TS, 1); P(u, pl.hi, px + ((x * 5 + k * 7) % 12), py + k * 4, 3, 1); } }
-    else if (L === 3) { P(u, pl.line, px, py, TS, 1); P(u, pl.line, px, py, 1, TS); for (let k = 0; k < 3; k++) P(u, pl.hi, px + ri(2, 13), py + ri(2, 13), 2, 1); }
-    else { P(u, pl.line, px, py, TS, 1); P(u, pl.line, px, py, 1, TS); P(u, pl.hi, px + 1, py + 1, 6, 1); P(u, pl.hi, px + 9, py + 9, 6, 1); P(u, pl.line, px + 7, py + 7, 2, 2); }
-    for (let k = 0; k < 3; k++) P(u, r() < 0.5 ? pl.line : pl.hi, px + ri(0, 15), py + ri(0, 15));
-    if (L === 1 && r() < 0.18) P(u, '#4a6a3a', px + ri(0, 13), py + ri(0, 14), 2, 1);   // moss
-    if (win) for (let k = 0; k < 4; k++) P(u, '#eef4f8', px + ri(0, 14), py + ri(0, 14), 2, 1);
-    // carpet
-    if (map.fstyle[i]) {
-      const cs = (xx, yy) => map.fstyle[yy * MW + xx] && lvlAt(xx, yy) === L;
-      P(u, pl.carpet, px, py, TS, TS); P(u, shade(pl.carpet, 0.15), px + 3, py + 3, 10, 10); P(u, shade(pl.carpet, -0.3), px + 6, py + 6, 4, 4);
-      if (!cs(x, y - 1)) P(u, '#e0b252', px, py, TS, 1); if (!cs(x, y + 1)) P(u, '#e0b252', px, py + 15, TS, 1);
-      if (!cs(x - 1, y)) P(u, '#e0b252', px, py, 1, TS); if (!cs(x + 1, y)) P(u, '#e0b252', px + 15, py, 1, TS);
+  // the building: each floor has its own tile layer; floor 0 is painted over the terrain, the rest on their own canvases
+  const castle = map.fl && map.fl.length > 1;
+  const floors = [null], minis = [mini];
+  if (castle) {
+    const LT = (z, x, y) => (x < 0 || y < 0 || x >= MW || y >= MH) ? T.VOID : map.fl[z][y * MW + x];
+    const floorTile = (u2, st, px, py, x, y) => {
+      if (st === 0) { P(u2, '#6a6674', px, py, TS, TS); P(u2, '#524e5c', px, py + 7, TS, 1); P(u2, '#524e5c', px + ((x + y) % 2 ? 4 : 11), py, 1, 8); P(u2, '#524e5c', px + ((x + y) % 2 ? 11 : 4), py + 8, 1, 8); for (let k = 0; k < 3; k++) P(u2, '#7a7684', px + ri(0, 15), py + ri(0, 15)); }
+      else if (st === 1) { P(u2, '#7a1a24', px, py, TS, TS); P(u2, '#9a2a34', px + 2, py + 2, 12, 12); P(u2, '#5a1018', px + 6, py + 6, 4, 4); P(u2, '#e0b252', px, py, TS, 1); P(u2, '#e0b252', px, py, 1, TS); }
+      else if (st === 2) { P(u2, '#8a5e36', px, py, TS, TS); for (let k = 0; k < 4; k++) { P(u2, '#6a4426', px, py + k * 4 + 3, TS, 1); P(u2, '#a47446', px + ((x * 5 + k * 7) % 12), py + k * 4, 3, 1); } }
+      else if (st === 3) { P(u2, '#2f4a6a', px, py, TS, TS); P(u2, '#3a5a7e', px + 1, py + 1, 6, 6); P(u2, '#3a5a7e', px + 9, py + 9, 6, 6); P(u2, '#223a56', px, py, TS, 1); P(u2, '#223a56', px, py, 1, TS); }
+      else { P(u2, '#4c4660', px, py, TS, TS); P(u2, '#6a6286', px + ri(1, 8), py + ri(0, 15), 7, 1); P(u2, '#2a2438', px + ri(0, 15), py + ri(0, 15), 1, 5); P(u2, '#5a5470', px, py, TS, 1); }
+    };
+    const castleTile = (u2, z, x, y) => {
+      const i = y * MW + x, t = LT(z, x, y);
+      if (t === T.VOID) return;
+      const px = x * TS, py = y * TS, st = map.rs[z][i] || 0, wp = LVL[z + 1];
+      if (t === T.WALL) {
+        P(u2, wp.wall, px, py, TS, TS);
+        for (let row = 0; row < 3; row++) { P(u2, shade(wp.wall, -0.3), px, py + row * 5 + 4, TS, 1); const off = row % 2 ? 0 : 4; P(u2, shade(wp.wall, -0.3), px + off, py + row * 5, 1, 4); P(u2, shade(wp.wall, -0.3), px + off + 8, py + row * 5, 1, 4); }
+        for (let k = 0; k < 6; k++) P(u2, r() < 0.5 ? shade(wp.wall, 0.12) : shade(wp.wall, -0.15), px + ri(0, 15), py + ri(0, 15));
+        const isW = (xx, yy) => LT(z, xx, yy) === T.WALL;
+        if (!isW(x, y - 1)) P(u2, wp.wallHi, px, py, TS, 3);
+        if (!isW(x, y + 1)) { P(u2, shade(wp.wall, -0.35), px, py + 12, TS, 4); P(u2, 'rgba(0,0,0,.3)', px, py + 15, TS, 1); }
+        if (!isW(x - 1, y)) P(u2, shade(wp.wall, -0.2), px, py, 1, TS);
+        if (!isW(x + 1, y)) P(u2, shade(wp.wall, -0.2), px + 15, py, 1, TS);
+        const outer = x === FP[0] || y === FP[1] || x === FP[0] + FP[2] - 1 || y === FP[1] + FP[3] - 1;
+        if (outer && (x * 3 + y * 5) % 6 === 0 && x > FP[0] && y > FP[1] && x < FP[0] + FP[2] - 1 && y < FP[1] + FP[3] - 1) { P(u2, OL, px + 4, py + 3, 8, 9); P(u2, z % 2 ? '#7a8cff' : '#ffb347', px + 5, py + 4, 6, 7); P(u2, OL, px + 7, py + 4, 2, 7); P(u2, OL, px + 5, py + 7, 6, 1); }
+        else if (!outer && !isW(x, y + 1) && (x * 7 + y * 3 + z) % 6 === 0) { const bc = ['#a01830', '#2f4fa8', '#2a7a3a'][(x + y + z) % 3]; P(u2, OL, px + 4, py + 2, 8, 12); P(u2, bc, px + 5, py + 3, 6, 10); P(u2, '#e0b252', px + 7, py + 5, 2, 4); P(u2, bc, px + 5, py + 13, 2, 2); P(u2, bc, px + 9, py + 13, 2, 2); }
+        return;
+      }
+      if (t === T.STAIRS) { stairsDraw(u2, px, py, map.stairD[i]); if (z === map.stair[i] + 1) { P(u2, 'rgba(0,0,0,.35)', px, py, TS, TS); } return; }
+      floorTile(u2, st, px, py, x, y);
+      if (LT(z, x, y - 1) === T.WALL) { P(u2, 'rgba(0,0,0,.3)', px, py, TS, 3); P(u2, 'rgba(0,0,0,.15)', px, py + 3, TS, 2); }
+      if (t === T.DECOR) castleDecor(u2, map.decoL[z][i], px + 8, py + 9);
+    };
+    for (let y = FP[1]; y < FP[1] + FP[3]; y++) for (let x = FP[0]; x < FP[0] + FP[2]; x++) castleTile(g, 0, x, y);
+    for (let z = 1; z < map.fl.length; z++) {
+      const fc = mk(W, H), fg = fc.getContext('2d'), mc = mk(MW, MH), mg = mc.getContext('2d');
+      P(mg, '#07050e', 0, 0, MW, MH);
+      for (let y = FP[1]; y < FP[1] + FP[3]; y++) for (let x = FP[0]; x < FP[0] + FP[2]; x++) {
+        castleTile(fg, z, x, y);
+        const t = LT(z, x, y); if (t !== T.VOID) P(mg, t === T.WALL ? '#9a95a0' : t === T.STAIRS ? '#e0b252' : t === T.DECOR ? '#8a5a2a' : '#6a6674', x, y);
+      }
+      floors.push(fc); minis.push(mc);
     }
-    // walls built on the deck
-    if (tt === T.WALL) {
-      P(u, pl.wall, px, py, TS, TS);
-      for (let row = 0; row < 3; row++) { P(u, shade(pl.wall, -0.3), px, py + row * 5 + 4, TS, 1); const off = row % 2 ? 0 : 4; P(u, shade(pl.wall, -0.3), px + off, py + row * 5, 1, 4); P(u, shade(pl.wall, -0.3), px + off + 8, py + row * 5, 1, 4); }
-      for (let k = 0; k < 6; k++) P(u, r() < 0.5 ? shade(pl.wall, 0.12) : shade(pl.wall, -0.15), px + ri(0, 15), py + ri(0, 15));
-      if (at(x, y - 1) !== T.WALL) P(u, pl.wallHi, px, py, TS, 3);
-      if (at(x, y + 1) !== T.WALL) { P(u, shade(pl.wall, -0.35), px, py + 12, TS, 4); P(u, 'rgba(0,0,0,.3)', px, py + 16 - 1, TS, 1); if ((x * 7 + y * 3) % 5 === 0) { const bc = ['#a01830', '#2f4fa8', '#2a7a3a'][(x + y) % 3]; P(u, OL, px + 4, py + 2, 8, 12); P(u, bc, px + 5, py + 3, 6, 10); P(u, '#e0b252', px + 7, py + 5, 2, 4); P(u, bc, px + 5, py + 13, 2, 2); P(u, bc, px + 9, py + 13, 2, 2); } }
-      if (at(x - 1, y) !== T.WALL) P(u, shade(pl.wall, -0.2), px, py, 1, TS);
-      if (at(x + 1, y) !== T.WALL) P(u, shade(pl.wall, -0.2), px + 15, py, 1, TS);
-    } else if (tt === T.DECOR && map.deco[i]) castleDecor(u, map.deco[i], px + 8, py + 9);
-    // cliff edges: a front face where the next tile lies lower, thin rims elsewhere
-    const lo = (xx, yy) => at(xx, yy) !== T.STAIRS && lvlAt(xx, yy) < L;
-    if (lo(x, y + 1)) { const diff = L - lvlAt(x, y + 1), hb = Math.min(8, 3 + diff * 2); P(u, '#2a2630', px, py + TS - hb, TS, hb); P(u, '#4a4654', px, py + TS - hb, TS, 1); for (let k = 0; k < hb; k += 3) P(u, '#1c1822', px + ((k * 5) % 12), py + TS - hb + k, 4, 1); }
-    if (lo(x, y - 1)) { P(u, pl.hi, px, py, TS, 1); P(u, '#2a2630', px, py + 1, TS, 1); }
-    if (lo(x - 1, y)) { P(u, '#2a2630', px, py, 2, TS); P(u, pl.hi, px + 2, py, 1, TS); }
-    if (lo(x + 1, y)) { P(u, '#2a2630', px + 14, py, 2, TS); P(u, pl.hi, px + 13, py, 1, TS); }
   }
+  const hasUp = false;
 
   const MC = { [T.GRASS]: pal.grass, [T.DIRT]: pal.dirt || '#7a6040', [T.WALL]: pac ? '#2d5bff' : '#9a958e', [T.WATER]: '#2f5f7c', [T.BUSH]: '#2f5022', [T.ICE]: '#a9d3e3', [T.TREE]: '#2b4220', [T.FLOOR]: '#7d5f3c', [T.PORTAL]: '#b07cff', [T.HEDGE]: '#2e4a22', [T.ROAD]: '#877c68', [T.BRIDGE]: '#8b6a42', [T.TOMB]: '#8a8a92', [T.WHEAT]: '#b8963a', [T.DECOR]: '#d9772e', [T.SAND]: '#d9c48a', [T.MUSH]: pal.grass, [T.STAIRS]: '#8a857e' };
-  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) P(mm, upAt(x, y) ? ['#6d6a74', '#8a5e36', '#4a3a5e', '#c8b878'][Math.max(0, map.lvl[y * MW + x] - 1)] : map.belt[y * MW + x] >= 0 ? '#c9a23a' : MC[at(x, y)], x, y);
-  return { ground, over, upper: hasUp ? upper : null, mini, lights };
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) P(mm, castle && map.fp[y * MW + x] ? (at(x, y) === T.WALL ? '#9a95a0' : at(x, y) === T.STAIRS ? '#e0b252' : '#6a6674') : map.belt[y * MW + x] >= 0 ? '#c9a23a' : MC[at(x, y)], x, y);
+  return { ground, over, upper: null, mini, minis, floors, lights };
 }
 
 function drawHat(g, key, x, hy, dir) {
@@ -762,8 +767,14 @@ export class Renderer {
     const cx = Math.round((this.cam.x + sx) * z) / z, cy = Math.round((this.cam.y + sy) * z) / z;
     const world = () => g.setTransform(z, 0, 0, z, -cx * z, -cy * z);
     world();
-    g.drawImage(this.layers.ground, 0, 0);
-    if (this.decal) g.drawImage(this.decal, 0, 0);
+    const castle = map.fl && map.fl.length > 1, vz = castle && me ? (me.z | 0) : 0;
+    if (vz > 0 && this.layers.floors[vz]) { g.fillStyle = '#07050e'; g.fillRect(cx - 2, cy - 2, vw + 4, vh + 4); g.drawImage(this.layers.floors[vz], 0, 0); }
+    else g.drawImage(this.layers.ground, 0, 0);
+    if (this.decal && vz === 0) g.drawImage(this.decal, 0, 0);
+    // floors a pawn is on: one, or both floors of the stairs it stands on
+    const floorsOf = p => { if (castle && p.stairs) { const lo = map.stair[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)]; if (lo >= 0) return [lo, lo + 1]; } return [p.z | 0]; };
+    const myF = castle && me ? floorsOf(me) : [0];
+    const onMyFloor = p => !castle || floorsOf(p).some(z => myF.includes(z));
     this.lastCx = cx; this.lastCy = cy;
     for (const [id, a] of this.anims) { a.t -= dt; if (a.t <= 0) this.anims.delete(id); }
     for (const [id, f] of this.flashes) { if (f - dt <= 0) this.flashes.delete(id); else this.flashes.set(id, f - dt); }
@@ -782,7 +793,7 @@ export class Renderer {
       g.restore();
     }
     // conveyor belts: dark rubber with moving chevrons
-    if (map.belt) {
+    if (map.belt && vz === 0) {
       const tx0 = Math.max(0, Math.floor(cx / TS) - 1), ty0 = Math.max(0, Math.floor(cy / TS) - 1);
       const tx1 = Math.min(MW - 1, Math.ceil((cx + vw) / TS) + 1), ty1 = Math.min(MH - 1, Math.ceil((cy + vh) / TS) + 1);
       const off = Math.floor((t * BELT_SPEED) % 8);
@@ -826,7 +837,7 @@ export class Renderer {
       if (this.prints.length > 600) this.prints.splice(0, this.prints.length - 600);
     }
 
-    for (const pr of map.portals) for (const ti of pr) {
+    if (vz === 0) for (const pr of map.portals) for (const ti of pr) {
       const px = (ti % MW) * TS + 8, py = ((ti / MW) | 0) * TS + 8;
       if (map.type === 'pacman') { g.globalAlpha = 0.4 + 0.3 * Math.sin(t * 5); disc(g, '#2d5bff', px, py, 5); g.globalAlpha = 1; continue; }
       g.globalAlpha = 0.5 + 0.3 * Math.sin(t * 4 + ti);
@@ -872,7 +883,9 @@ export class Renderer {
       P(g, win ? '#f4f8fb' : '#c79a5a', px + 2, py + 1, 12, win ? 2 : 1);
     }
     const sdSet = this.spiral.length && v.sd ? new Set(this.spiral.slice(0, v.sd)) : null;
-    for (const i of v.walls) {
+    for (const wk of v.walls) {
+      if (((wk / (MW * MH)) | 0) !== vz) continue;
+      const i = wk % (MW * MH);
       const px = (i % MW) * TS, py = ((i / MW) | 0) * TS;
       if (sdSet && sdSet.has(i)) {
         P(g, OL, px, py, 16, 16); P(g, '#6e6a72', px + 1, py + 1, 14, 14); P(g, '#8e8a92', px + 1, py + 1, 14, 2); P(g, '#55515a', px + 1, py + 12, 14, 3);
@@ -901,7 +914,7 @@ export class Renderer {
       drawGlyph(g, r.k, r.x - 2, r.y - 7 + b, col);
       if (gold && Math.random() < 0.15) this.parts.push({ x: r.x + (Math.random() - 0.5) * 12, y: r.y - 6, vx: 0, vy: -15, life: 0.6, max: 0.6, col: '#ffe08a', size: 1 });
     };
-    for (const r of v.runes) if (!r.z) drawRune(r);
+    for (const r of v.runes) if (!r.z && vz === 0) drawRune(r);
     for (const b of v.bombs) {
       const pulse = b.t < 0.7 ? Math.floor(t * 16) % 2 : Math.floor(t * 5) % 2;
       drawBomb(g, b.x, b.y + 1, t, pulse);
@@ -925,6 +938,7 @@ export class Renderer {
     const underUp = p => (p.z || 0) === 0 && map.up[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)];
     const hiddenFor = p => {
       if (p.id === v.me) return false;
+      if (!onMyFloor(p)) return true;
       if (sight && !this.inSight(me.x, me.y - 6, p.x, p.y - 6)) return true;
       if (reveal) return false;
       if (p.fx && p.fx.invis > 0) return true;
@@ -998,7 +1012,7 @@ export class Renderer {
     for (const p of low) drawEnt(p);
 
     g.globalAlpha = me && me.alive && inHide(me) ? 0.55 : 1;
-    g.drawImage(this.layers.over, 0, 0);
+    if (vz === 0) g.drawImage(this.layers.over, 0, 0);
     g.globalAlpha = 1;
     if (this.layers.upper) {
       g.globalAlpha = me && underUp(me) && !me.stairs ? 0.4 : 1;
@@ -1006,10 +1020,11 @@ export class Renderer {
       g.globalAlpha = 1;
     }
     for (const p of high) drawEnt(p);
-    for (const r of v.runes) if (r.z) drawRune(r);
+    for (const r of v.runes) if (r.z && r.z === vz) drawRune(r);
     // braziers: living flames and rising embers
     if (map.torches && map.torches.length) {
-      for (const [tx0, ty0] of map.torches) {
+      for (const [tx0, ty0, tz0] of map.torches) {
+        if (tz0 !== vz) continue;
         if (tx0 < cx - 16 || tx0 > cx + vw + 16 || ty0 < cy - 24 || ty0 > cy + vh + 24) continue;
         flame(g, tx0, ty0 - 3, t, tx0 * 0.13 + ty0);
         if (Math.random() < dt * 3) this.parts.push({ x: tx0 + (Math.random() - 0.5) * 5, y: ty0 - 6, vx: (Math.random() - 0.5) * 8, vy: -16 - Math.random() * 10, life: 1.1, max: 1.1, col: Math.random() < 0.5 ? '#ff9a2a' : '#ffd23f', size: 1 });
@@ -1121,7 +1136,7 @@ export class Renderer {
       d.globalCompositeOperation = 'destination-out';
       const lights = [];
       if (me && (me.alive || me.ghost || dm) && dark.r) lights.push([me.x, me.y - 6, me.alive || !dm ? dark.r : 60]);
-      if (dark.torch) for (const [tx0, ty0] of map.torches) if (tx0 > cx - 70 && tx0 < cx + vw + 70 && ty0 > cy - 70 && ty0 < cy + vh + 70) lights.push([tx0, ty0 - 4, 54 + Math.sin(t * 9 + tx0) * 3]);
+      if (dark.torch) for (const [tx0, ty0, tz0] of map.torches) if (tz0 === vz && tx0 > cx - 70 && tx0 < cx + vw + 70 && ty0 > cy - 70 && ty0 < cy + vh + 70) lights.push([tx0, ty0 - 4, 54 + Math.sin(t * 9 + tx0) * 3]);
       if (ev === 'night') {
         for (const p of v.players) if (p.alive && p.it && p !== me) lights.push([p.x, p.y - 6, 22]);
         for (const r of v.runes) lights.push([r.x, r.y - 4, 14]);
@@ -1281,24 +1296,27 @@ export class Renderer {
     const g = c.getContext('2d');
     if (c.width !== MW * 3) { c.width = MW * 3; c.height = MH * 3; }
     g.imageSmoothingEnabled = false;
-    g.drawImage(this.layers.mini, 0, 0, MW * 3, MH * 3);
+    const me0 = v.players.find(p => p.id === v.me), castleM = this.map.fl && this.map.fl.length > 1, mz = castleM && me0 ? (me0.z | 0) : 0;
+    g.drawImage(this.layers.minis[mz] || this.layers.mini, 0, 0, MW * 3, MH * 3);
     g.fillStyle = '#7a5530';
     for (const i of this.map.crates) g.fillRect((i % MW) * 3, ((i / MW) | 0) * 3, 3, 3);
     g.fillStyle = '#6e6a72';
-    for (const i of v.walls) g.fillRect((i % MW) * 3, ((i / MW) | 0) * 3, 3, 3);
+    for (const wk of v.walls) { if (((wk / (MW * MH)) | 0) !== mz) continue; const i = wk % (MW * MH); g.fillRect((i % MW) * 3, ((i / MW) | 0) * 3, 3, 3); }
     if (this.map.pellets.size) { g.fillStyle = '#ffd9a0'; for (const i of this.map.pellets) g.fillRect((i % MW) * 3 + 1, ((i / MW) | 0) * 3 + 1, 1, 1); }
     g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(0, 0, c.width, c.height);
     const blindMap = v.event === 'night' || v.event === 'fog' || v.event === 'blizzard' || v.mode === 'hide' || v.mode === 'dm';
     if (blindMap) { g.fillStyle = 'rgba(0,0,20,.7)'; g.fillRect(0, 0, c.width, c.height); }
     const dot = (x, y, col, s = 3) => { const tx = Math.floor(x / TS) * 3, ty = Math.floor(y / TS) * 3; g.fillStyle = '#000'; g.fillRect(tx - 1, ty - 1, s + 2, s + 2); g.fillStyle = col; g.fillRect(tx, ty, s, s); };
-    for (const r of v.runes) { g.fillStyle = RUNES[r.k].col; g.fillRect(Math.floor(r.x / TS) * 3 + 1, Math.floor(r.y / TS) * 3 + 1, 1, 1); }
+    for (const r of v.runes) { if (castleM && (r.z | 0) !== mz) continue; g.fillStyle = RUNES[r.k].col; g.fillRect(Math.floor(r.x / TS) * 3 + 1, Math.floor(r.y / TS) * 3 + 1, 1, 1); }
     if (v.zone) { g.strokeStyle = '#ffd23f'; g.beginPath(); g.arc(v.zone.x / TS * 3, v.zone.y / TS * 3, v.zone.r / TS * 3, 0, Math.PI * 2); g.stroke(); }
     if (v.flags) v.flags.forEach((f, i) => dot(f.x, f.y, TEAM_COLS[i]));
     for (const m of v.mobs) if (m.s !== 2) dot(m.x, m.y, m.s === 1 ? '#2d5bff' : MOB_COLS[m.kind]);
     const me = v.players.find(p => p.id === v.me);
     const reveal = me && me.fx && me.fx.eye > 0;
+    const fOf = p => { if (castleM && p.stairs) { const lo = this.map.stair[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)]; if (lo >= 0) return [lo, lo + 1]; } return [p.z | 0]; };
     for (const p of v.players) {
       if (!p.alive) continue;
+      if (castleM && me0 && !fOf(p).some(z => fOf(me0).includes(z))) continue;
       const self = p === me;
       const hidden = (p.fx && p.fx.invis > 0) || isHideT(this.map.g[Math.floor(p.y / TS) * MW + Math.floor(p.x / TS)]);
       const mate = v.mode === 'ctf' && me && p.team === me.team;

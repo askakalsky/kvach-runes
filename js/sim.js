@@ -1,5 +1,5 @@
 // Authoritative game simulation (runs on host / solo).
-import { genMap, TS, MW, MH, T, collides, tileAt, tileIdx, solidIdx, bfs, isHideT, isSolidT, MAP_TYPES, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED, BELT_DIRS } from './map.js';
+import { genMap, TS, MW, MH, T, collides, tileAt, tileIdx, solidIdx, bfs, isHideT, isSolidT, MAP_TYPES, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED, BELT_DIRS, zOf } from './map.js';
 
 export const MAXZ = 4;
 export const R = 5, BASE = 72, SUDDEN = 50, KOTH_WIN = 45, CTF_WIN = 3, HIDE_T = 30;
@@ -130,7 +130,9 @@ const d2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
 const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100;
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const N4 = i => { const x = i % MW, y = (i / MW) | 0, o = []; if (x > 0) o.push(i - 1); if (x < MW - 1) o.push(i + 1); if (y > 0) o.push(i - MW); if (y < MH - 1) o.push(i + MW); return o; };
-const sameLevel = (map, a, b) => (a.z || 0) === (b.z || 0) || map.g[tileIdx(a.x, a.y)] === T.STAIRS || map.g[tileIdx(b.x, b.y)] === T.STAIRS;
+// floors a pawn is on: one floor, or both floors of the stairs it stands on
+const floorsOf = (map, p) => { if (p.stairs) { const lo = map.stair[tileIdx(p.x, p.y)]; if (lo >= 0) return [lo, lo + 1]; } return [p.z | 0]; };
+const sameLevel = (map, a, b) => { const A = floorsOf(map, a), B = floorsOf(map, b); return A.some(z => B.includes(z)); };
 
 export function speedMult(p, mode, ev, bot) {
   const f = p.fx;
@@ -171,8 +173,8 @@ export function moveBody(map, p, ax, ay, dt, mult, slip, noclip) {
   if (l > 1) { ax /= l; ay /= l; }
   if (p.fx.dash > 0 && l < 0.2) { ax = p.fdx; ay = p.fdy; }
   noclip = noclip || p.fx.phase > 0;
-  const z = p.stairs ? -1 : (p.z || 0);
-  if (!noclip && z !== 1 && tileAt(map, p.x, p.y) === T.WATER && !(p.fx.dash > 0)) mult *= 0.55;
+  const z = zOf(map, p);
+  if (!noclip && z === 0 && tileAt(map, p.x, p.y) === T.WATER && !(p.fx.dash > 0)) mult *= 0.55;
   const k = slip ? 2.4 : 18, a = Math.min(1, k * dt);
   p.vx += (ax * BASE * mult - p.vx) * a;
   p.vy += (ay * BASE * mult - p.vy) * a;
@@ -197,9 +199,17 @@ export function moveBody(map, p, ax, ay, dt, mult, slip, noclip) {
   }
   // floors: stairs switch level, falling off a missing floor drops you down
   const ti = tileIdx(p.x, p.y);
-  if (map.g[ti] === T.STAIRS) { p.stairs = 1; p.sti = ti; }
-  else if (p.stairs) { p.stairs = 0; const lo = p.sti !== undefined ? map.stair[p.sti] : 0; p.z = map.lvl[ti] === lo + 1 ? lo + 1 : lo; }
-  else if (p.z > 0 && map.lvl[ti] !== p.z) p.z = 0;
+  const stl = map.stair[ti];
+  if (stl >= 0 && (p.stairs || p.z === stl || p.z === stl + 1)) { p.stairs = 1; p.sti = ti; }
+  else if (p.stairs) {
+    p.stairs = 0;
+    if (p.sti !== undefined && map.stair[p.sti] >= 0) {
+      const lo = map.stair[p.sti], [dx, dy] = BELT_DIRS[map.stairD[p.sti]];
+      const dot = ((ti % MW) - (p.sti % MW)) * dx + (((ti / MW) | 0) - ((p.sti / MW) | 0)) * dy;
+      if (dot > 0) p.z = lo + 1; else if (dot < 0) p.z = lo;
+    }
+  }
+  else if (p.z > 0 && map.fl[p.z] && map.fl[p.z][ti] === T.VOID) p.z = 0;
   if (l > 0.2 && mult > 0) { const n = Math.hypot(ax, ay); p.fdx = ax / n; p.fdy = ay / n; }
   p.m = Math.hypot(p.vx, p.vy) > 12 ? 1 : 0;
 }
@@ -329,10 +339,10 @@ export class Sim {
     if (this.mode === 'dm') return;
     const ps = this.players;
     for (let tries = 0; tries < 30; tries++) {
-      const [x, y] = at || pick(this.map.walk);
+      const z = at || this.map.fl.length < 2 ? 0 : pick([0, 0, 1, 2, 3]);
+      const [x, y] = at || pick(this.map.walkZ[z]);
       const ti = tileIdx(x, y);
       if (this.map.dyn.has(ti) || this.map.crates.has(ti) || (at && this.map.up[ti])) { if (at) return; continue; }
-      const z = !at && this.map.up[ti] && Math.random() < 0.75 ? this.map.lvl[ti] : 0;
       if (!at && ps.some(p => p.alive && (p.z || 0) === z && d2(p, { x, y }) < 48 * 48)) continue;
       if (!at && this.runes.some(r => (r.z || 0) === z && d2(r, { x, y }) < 40 * 40)) continue;
       this.runes.push({ id: this.uid++, x, y, z, k: k || pick(RUNE_KEYS) });
@@ -348,13 +358,13 @@ export class Sim {
     }
   }
 
-  placeWall(tx, ty, life) {
+  placeWall(tx, ty, life, z = 0) {
     if (tx <= 0 || ty <= 0 || tx >= MW - 1 || ty >= MH - 1) return;
     const i = ty * MW + tx;
-    if (solidIdx(this.map, i) || this.map.g[i] === T.PORTAL || this.map.g[i] === T.STAIRS || this.map.up[i]) return;
+    if (solidIdx(this.map, i, z) || this.map.g[i] === T.PORTAL || this.map.stair[i] >= 0 || this.map.up[i]) return;
     const x0 = tx * TS - R - 1, y0 = ty * TS - R - 1, x1 = tx * TS + TS + R + 1, y1 = ty * TS + TS + R + 1;
     if ([...this.players.filter(p => p.alive), ...this.decoys].some(p => p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1)) return;
-    this.map.dyn.set(i, life);
+    this.map.dyn.set(z > 0 ? i + z * MW * MH : i, life);
   }
 
   // push q away from (x,y) by up to dist px, stopping at walls
@@ -363,7 +373,7 @@ export class Sim {
     const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
     for (let s = dist; s > 0; s -= 4) {
       const nx = q.x + dx * s, ny = q.y + dy * s;
-      if (!collides(this.map, nx, ny, R, q.stairs ? -1 : q.z)) { q.x = nx; q.y = ny; q.tp++; q.vx = q.vy = 0; return; }
+      if (!collides(this.map, nx, ny, R, zOf(this.map, q))) { q.x = nx; q.y = ny; q.tp++; q.vx = q.vy = 0; return; }
     }
   }
 
@@ -390,7 +400,7 @@ export class Sim {
       case 'builder': {
         const tx = Math.floor((p.x - p.fdx * 20) / TS), ty = Math.floor((p.y - p.fdy * 20) / TS);
         const horiz = Math.abs(p.fdy) >= Math.abs(p.fdx);
-        for (let i = -2; i <= 2; i++) this.placeWall(tx + (horiz ? i : 0), ty + (horiz ? 0 : i), 6);
+        for (let i = -2; i <= 2; i++) this.placeWall(tx + (horiz ? i : 0), ty + (horiz ? 0 : i), 6, p.z | 0);
         break;
       }
       case 'frost':
@@ -436,7 +446,7 @@ export class Sim {
       case 'tiny': f.tiny = 6; break;
       case 'blink': {
         let bx = p.x, by = p.y;
-        const z = p.stairs ? -1 : p.z;
+        const z = zOf(this.map, p);
         for (let s = 4; s <= 64; s += 4) {
           const nx = p.x + p.fdx * s, ny = p.y + p.fdy * s;
           if (!collides(this.map, nx, ny, R, z)) { bx = nx; by = ny; }
@@ -454,7 +464,7 @@ export class Sim {
       case 'wall': {
         const tx = Math.floor((p.x - p.fdx * 20) / TS), ty = Math.floor((p.y - p.fdy * 20) / TS);
         const horiz = Math.abs(p.fdy) >= Math.abs(p.fdx);
-        for (let i = -1; i <= 1; i++) this.placeWall(tx + (horiz ? i : 0), ty + (horiz ? 0 : i), 6);
+        for (let i = -1; i <= 1; i++) this.placeWall(tx + (horiz ? i : 0), ty + (horiz ? 0 : i), 6, p.z | 0);
         break;
       }
       case 'decoy':
@@ -970,7 +980,7 @@ export class Sim {
         for (const p of hiders) this.fx('whistle', p.x, p.y, { id: p.id });
         for (const s of ps) if (s.bot && s.alive && s.it && hiders.length) {
           const h = hiders.reduce((a, b) => d2(a, s) < d2(b, s) ? a : b);
-          s.ai.last = [h.x, h.y];
+          s.ai.last = [h.x, h.y]; s.ai.lastZ = h.z | 0;
         }
       }
     }
@@ -1423,21 +1433,95 @@ export class Sim {
     this.steer(p, ai.wx, ai.wy, spd);
   }
 
-  // bots that end up on an upper deck linger a moment, then walk to the nearest stairs down
+  // ---- floors: breadth-first search over (tile, floor); crossing a stairwell changes the floor
+  path3(start, z0, pred, maxNodes = 6000) {
+    const map = this.map, N = MW * MH;
+    if (!this._p3) this._p3 = new Int32Array(N * 4);
+    const par = this._p3; par.fill(-2);
+    const s0 = start * 4 + z0; par[s0] = -1;
+    if (pred(start, z0)) return { step: start, z: z0 };
+    const q = [s0];
+    for (let h = 0; h < q.length && q.length < maxNodes; h++) {
+      const st = q[h], c = (st / 4) | 0, z = st & 3, x = c % MW, y = (c / MW) | 0;
+      const lo = map.stair[c], onSt = lo >= 0 && (z === lo || z === lo + 1);
+      for (const [dx, dy] of BELT_DIRS) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= MW || ny >= MH) continue;
+        const n = ny * MW + nx; let nz = z;
+        if (onSt) {
+          if (solidIdx(map, n, -1 - lo)) continue;
+          if (map.stair[n] === lo) nz = z;
+          else { const [sx, sy] = BELT_DIRS[map.stairD[c]], dot = dx * sx + dy * sy; if (dot === 0) continue; nz = dot > 0 ? lo + 1 : lo; }
+        } else if (solidIdx(map, n, z)) continue;
+        const ns = n * 4 + nz;
+        if (par[ns] !== -2) continue;
+        par[ns] = st; q.push(ns);
+        if (pred(n, nz)) { let cur = ns; while (par[cur] !== s0) cur = par[cur]; return { step: (cur / 4) | 0, z: cur & 3 }; }
+      }
+    }
+    return null;
+  }
+
+  // multi-floor behaviour of a bot: hunters follow prey through the stairs, the rest roam between floors
   botLevel(p, dt) {
     const map = this.map, ai = p.ai;
+    if (map.fl.length < 2) return false;
+    const z = p.z | 0, ti = tileIdx(p.x, p.y), mode = this.mode;
     if (p.stairs) {
-      const ti = tileIdx(p.x, p.y), d = map.stairD[ti], [dx, dy] = BELT_DIRS[d];
-      const sg = (p.vx * dx + p.vy * dy) >= 0 ? 1 : -1;
-      this.steer(p, p.x + dx * sg * 24, p.y + dy * sg * 24, 1);
-      return true;
+      const lo = map.stair[ti];
+      if (lo >= 0) {
+        const [dx, dy] = BELT_DIRS[map.stairD[ti]], fz = ai.fz ?? z;
+        const sg = fz > z ? 1 : fz < z ? -1 : (z === lo + 1 ? 1 : -1);
+        this.steer(p, p.x + dx * sg * 24, p.y + dy * sg * 24, 1);
+        return true;
+      }
     }
-    if (!(p.z > 0)) { ai.dwell = 0; return false; }
-    ai.dwell = (ai.dwell || 0) + dt;
-    if (ai.dwell < 2.5) { p.ax = p.ay = 0; return true; }
-    const goal = this.pathStep(tileIdx(p.x, p.y), n => map.g[n] === T.STAIRS && map.stair[n] + 1 === p.z, null, 2200, p.z);
-    if (goal < 0) return false;
-    const [tx, ty] = this.center(goal);
+    if (ai.pz !== z) { ai.pz = z; ai.stay = (mode === 'hide' ? 22 : 6) + Math.random() * 14; ai.tz = undefined; ai.fgoal = null; }
+    ai.stay -= dt;
+    const roam = mode === 'classic' || mode === 'heroes' || mode === 'bomb' || mode === 'infect' || mode === 'hide';
+    const prey = this.players.filter(q => q.alive && !q.it && q !== p && q.fx.invis <= 0);
+    const hunters = this.players.filter(q => q.alive && q.it && q !== p);
+    let pred = null, fz = z, chase = null;
+    const toTile = (zt, tile) => { fz = zt > z ? z + 1 : zt < z ? z - 1 : z; return (n, zz) => n === tile && zz === zt; };
+    const toStairs = z2 => { const lo = Math.min(z, z2); fz = z2; return (n, zz) => zz === z && map.stair[n] === lo; };
+    if (p.it && mode !== 'hide') {
+      if (z === 0 && prey.some(q => sameLevel(map, q, p))) return false;          // plain chase logic handles the ground
+      chase = prey.slice().sort((x, y) => (d2(x, p) + Math.abs((x.z | 0) - z) * 22500) - (d2(y, p) + Math.abs((y.z | 0) - z) * 22500))[0];
+      if (!chase) { if (z === 0) return false; p.ax = p.ay = 0; return true; }
+      if (sameLevel(map, chase, p) && d2(chase, p) < 45 * 45) { this.steer(p, chase.x, chase.y, 1); return true; }
+      pred = toTile(chase.z | 0, tileIdx(chase.x, chase.y));
+    } else if (p.it) {                                                             // hide & seek seeker
+      if (this.hideT > 0) return false;
+      const lz = ai.lastZ | 0;
+      if (ai.last && (lz !== z || z > 0)) {
+        if (lz === z && Math.hypot(ai.last[0] - p.x, ai.last[1] - p.y) < 14) ai.last = null;
+        else pred = toTile(lz, tileIdx(ai.last[0], ai.last[1]));
+      }
+      if (!pred) { if (z > 0) pred = toStairs(z - 1); else return false; }
+    } else {
+      const threat = hunters.some(h => sameLevel(map, h, p) && d2(h, p) < 95 * 95);
+      if (z === 0) {
+        if (!roam || (ai.stay > 0 && !(threat && Math.random() < 0.004))) return false;
+        pred = toStairs(1);
+      } else if (!roam) pred = toStairs(z - 1);
+      else if (threat || ai.stay <= 0) {
+        if (ai.tz === undefined || Math.abs(ai.tz - z) !== 1) ai.tz = z >= 3 ? z - 1 : (Math.random() < 0.5 ? z + 1 : z - 1);
+        pred = toStairs(ai.tz);
+      } else {
+        const g0 = ai.fgoal;
+        if (!g0 || g0.z !== z || (ai.fgt -= dt) <= 0 || g0.tile === ti) {
+          const pts = map.walkZ[z];
+          for (let k = 0; k < 12; k++) { const pt = pick(pts), dd = Math.hypot(pt[0] - p.x, pt[1] - p.y); if (dd > 40 && dd < 190) { ai.fgoal = { z, tile: tileIdx(pt[0], pt[1]) }; ai.fgt = 7; break; } }
+        }
+        if (!ai.fgoal) { p.ax = p.ay = 0; return true; }
+        pred = toTile(z, ai.fgoal.tile);
+      }
+    }
+    ai.fz = fz;
+    const r = this.path3(ti, z, pred);
+    if (!r) { if (z > 0) { p.ax = p.ay = 0; return true; } return false; }
+    if (r.step === ti && r.z === z) { p.ax = p.ay = 0; if (ai.fgoal) ai.fgoal = null; return z > 0; }
+    const [tx, ty] = this.center(r.step);
     this.steer(p, tx, ty, 1);
     return true;
   }
