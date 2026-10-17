@@ -23,7 +23,7 @@
   <div id="top"><div id="timer">3:00</div><div id="sub"></div></div>
   <div id="side">
     <canvas id="mini"></canvas>
-    <div id="tools"><button class="micBtn hidden" title="Микрофон">🔇</button><button id="viewBtn" title="2D / 3D">3D</button><button id="muteBtn" title="Звук">♪</button><button id="exitBtn" title="Выйти">✕</button></div>
+    <div id="tools"><button class="micBtn hidden" title="Микрофон">🔇</button><button id="ctlBtn" title="Управление">🎮</button><button id="viewBtn" title="2D / 3D">3D</button><button id="muteBtn" title="Звук">♪</button><button id="exitBtn" title="Выйти">✕</button></div>
   </div>
   <div id="banner"></div>
   <div id="center"></div>
@@ -49,6 +49,7 @@
     <button id="hostBtn" class="big">Создать комнату</button>
     <div class="row"><input id="codeIn" placeholder="КОД" maxlength="4" autocomplete="off" autocapitalize="characters"><button id="joinBtn">Войти</button></div>
     <div class="row2"><button id="profBtn">🏆 Профиль и скины</button><button id="helpBtn">Как играть</button></div>
+    <button id="ctlMenuBtn" class="ghost">🎮 Управление и джойстик</button>
   </div>
 </div>
 
@@ -151,6 +152,27 @@
       <li>Стрелки по краям экрана показывают, где квач (или ближайшая жертва).</li>
     </ul>
     <button id="helpBack" class="big">Понятно</button>
+  </div>
+</div>
+
+
+<div id="settings" class="screen hidden">
+  <div class="panel wide">
+    <h2>Управление</h2>
+    <label class="ctl">Джойстик <select id="c_hand"><option value="left">Слева · кнопки справа</option><option value="right">Справа · кнопки слева</option></select></label>
+    <label class="ctl">Тип <select id="c_type"><option value="float">Плавающий</option><option value="fixed">Фиксированный</option><option value="dpad">Крестовина (8 напр.)</option></select></label>
+    <label class="ctl">Размер <input type="range" id="c_size" min="36" max="100"><output></output></label>
+    <label class="ctl">Полный ход с <input type="range" id="c_reach" min="25" max="100"><output></output></label>
+    <label class="ctl">Мёртвая зона <input type="range" id="c_dead" min="0" max="35"><output></output></label>
+    <label class="ctl">Прозрачность <input type="range" id="c_opacity" min="15" max="100"><output></output></label>
+    <label class="ctl" id="r_zone">Зона касания <input type="range" id="c_zone" min="30" max="80"><output></output></label>
+    <label class="ctl" id="r_fx">Отступ от края <input type="range" id="c_fx" min="6" max="40"><output></output></label>
+    <label class="ctl" id="r_fy">Высота от низа <input type="range" id="c_fy" min="10" max="60"><output></output></label>
+    <label class="ctl">Размер кнопок <input type="range" id="c_btn" min="60" max="150"><output></output></label>
+    <label class="ctl">Прозрачность кнопок <input type="range" id="c_btnop" min="30" max="100"><output></output></label>
+    <p id="padNote">Проверь здесь: води пальцем по серому полю. Точка бежит туда, куда ведёшь.</p>
+    <canvas id="padTest"></canvas>
+    <div class="row2"><button id="ctlReset">Сбросить</button><button id="ctlBack" class="big">Готово</button></div>
   </div>
 </div>
 

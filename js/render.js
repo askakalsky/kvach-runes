@@ -2,6 +2,7 @@
 import { TS, MW, MH, T, rng, isHideT, isSolidT, arenaSpiral, isWinter, BELT_DX, BELT_DY, BELT_SPEED } from './map.js';
 import { RUNES, GLYPHS, ITEMS, TEAM_COLS, MOB_COLS, HEROES, EMOTES } from './sim.js';
 import { CAPES } from './skins.js';
+import { drawStick } from './input.js';
 
 const OL = '#1d1712';
 // FLASH: when set, every opaque pixel of a sprite is drawn in this colour (hit flash)
@@ -1181,17 +1182,7 @@ export class Renderer {
     }
   }
 
-  drawJoystick(joy) {
-    if (!joy.active) return;
-    const g = this.g, d = this.dpr;
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.globalAlpha = 0.35; g.fillStyle = '#000';
-    g.beginPath(); g.arc(joy.ox * d, joy.oy * d, 56 * d, 0, Math.PI * 2); g.fill();
-    g.globalAlpha = 0.6; g.strokeStyle = '#e0b252'; g.lineWidth = 2 * d; g.stroke();
-    g.globalAlpha = 0.85; g.fillStyle = '#e0b252';
-    g.beginPath(); g.arc(joy.kx * d, joy.ky * d, 24 * d, 0, Math.PI * 2); g.fill();
-    g.globalAlpha = 1;
-  }
+  drawJoystick(joy) { drawStick(this.g, joy, this.dpr, innerWidth, innerHeight); }
 
   drawMini(c, v) {
     if (!this.layers) return;

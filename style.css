@@ -20,14 +20,14 @@ body.v3d #game3d { display: block; }
 #heroRow label { display: grid; grid-template-columns: 100px 1fr; align-items: center; gap: 8px; color: var(--dim); font-size: 10px; }
 #heroDesc { color: #c9c3b4; background: #181a1e; padding: 8px; border-left: 3px solid #ffe14a; }
 #bombBtn.cool { opacity: .55; border-color: #666; }
-#emoBtn { position: absolute; right: max(30px, env(safe-area-inset-right)); bottom: calc(max(22px, env(safe-area-inset-bottom)) + 120px); width: 54px; height: 54px; border-radius: 50%; font-size: 24px; padding: 0; background: rgba(31,34,39,.8); border: 2px solid #555; box-shadow: 0 3px 0 #000; touch-action: none; }
+#emoBtn { position: absolute; right: max(30px, env(safe-area-inset-right)); bottom: calc(max(22px, env(safe-area-inset-bottom)) + (var(--rb) + 12px) * var(--bs)); width: calc(54px * var(--bs)); height: calc(54px * var(--bs)); border-radius: 50%; font-size: 24px; padding: 0; background: rgba(31,34,39,.8); border: 2px solid #555; box-shadow: 0 3px 0 #000; touch-action: none; }
 #emoWheel { position: absolute; inset: 0; background: rgba(0,0,0,.35); pointer-events: auto; z-index: 6; }
 #emoWheel button { position: absolute; left: 50%; top: 50%; width: 92px; height: 66px; margin: -33px 0 0 -46px; transform: rotate(var(--a)) translate(140px) rotate(calc(-1 * var(--a))); border-radius: 14px; background: #262a30f2; border: 2px solid var(--acc); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px; touch-action: none; }
 #emoWheel b { font-size: 24px; line-height: 1; }
 #emoWheel span { font-size: 7px; color: #fff; }
 #emoWheel i { position: absolute; top: 3px; left: 6px; font-size: 7px; color: var(--dim); font-style: normal; }
 @media (pointer: coarse) { #emoWheel i { display: none; } }
-@media (max-height: 460px) { #emoBtn { bottom: calc(max(22px, env(safe-area-inset-bottom)) + 96px); width: 46px; height: 46px; font-size: 20px; } #emoWheel button { transform: rotate(var(--a)) translate(96px) rotate(calc(-1 * var(--a))); width: 80px; height: 56px; margin: -28px 0 0 -40px; } }
+@media (max-height: 460px) { #emoBtn { font-size: 20px; } #emoWheel button { transform: rotate(var(--a)) translate(96px) rotate(calc(-1 * var(--a))); width: 80px; height: 56px; margin: -28px 0 0 -40px; } }
 button, input, select { font-family: var(--font); font-size: 11px; color: var(--ink); }
 b.red { color: var(--red); }
 
@@ -119,8 +119,8 @@ input[type=range] { padding: 0; accent-color: var(--acc); }
 #center { position: absolute; top: 38%; left: 0; right: 0; text-align: center; font-size: 30px; color: #fff; text-shadow: 3px 3px 0 #000, -2px -2px 0 #000; opacity: 0; pointer-events: none; }
 #center.pop { animation: pop 1.3s ease-out forwards; }
 @keyframes pop { 0% { opacity: 0; transform: scale(2.2); } 12% { opacity: 1; transform: scale(1); } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-20px); } }
-#runeBtn { --rc: #666; position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom)); width: 108px; height: 108px; border-radius: 50%; background: rgba(31,34,39,.75); border: 3px solid #555; box-shadow: 0 4px 0 #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0; touch-action: none; }
-#bombBtn { position: absolute; right: calc(max(18px, env(safe-area-inset-right)) + 118px); bottom: max(22px, env(safe-area-inset-bottom)); width: 92px; height: 92px; border-radius: 50%; background: rgba(60,30,20,.8); border: 3px solid #ff7a2a; box-shadow: 0 4px 0 #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0; touch-action: none; }
+#runeBtn { --rc: #666; position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom)); width: calc(var(--rb) * var(--bs)); height: calc(var(--rb) * var(--bs)); border-radius: 50%; background: rgba(31,34,39,.75); border: 3px solid #555; box-shadow: 0 4px 0 #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0; touch-action: none; }
+#bombBtn { position: absolute; right: calc(max(18px, env(safe-area-inset-right)) + (var(--rb) + 10px) * var(--bs)); bottom: max(22px, env(safe-area-inset-bottom)); width: calc(var(--bb) * var(--bs)); height: calc(var(--bb) * var(--bs)); border-radius: 50%; background: rgba(60,30,20,.8); border: 3px solid #ff7a2a; box-shadow: 0 4px 0 #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0; touch-action: none; }
 #bombBtn b { font-size: 30px; line-height: 1; }
 #bombBtn span { font-size: 8px; color: #ffd9b8; }
 #bombBtn:active { transform: scale(.92); }
@@ -179,9 +179,26 @@ body[data-theme=newyear] button.big { background: #6a1f1a; }
   #center { font-size: 22px; }
   #top { top: max(8px, env(safe-area-inset-top)); }
 }
-@media (max-height: 460px) { #board { font-size: 7px; } #board div { padding: 1px 4px; } #runeBtn { width: 88px; height: 88px; } #bombBtn { width: 78px; height: 78px; right: calc(max(18px, env(safe-area-inset-right)) + 96px); } }
+@media (max-height: 460px) { #hud { --rb: 88px; --bb: 78px; } #board { font-size: 7px; } #board div { padding: 1px 4px; } }
 
 #toast { position: fixed; bottom: 140px; left: 50%; transform: translate(-50%, 20px); opacity: 0; transition: .25s; background: #262a30; border: 2px solid var(--acc); padding: 10px 14px; z-index: 50; font-size: 10px; max-width: 90vw; text-align: center; pointer-events: none; box-shadow: 4px 4px 0 #000; word-break: break-all; }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
 
 #bombBtn .wIcon { width: 64px; height: auto; image-rendering: pixelated; display: block; }
+
+/* ---- adjustable controls ---- */
+#hud { --rb: 108px; --bb: 92px; --bs: 1; --bo: 1; }
+#runeBtn, #bombBtn, #emoBtn { opacity: var(--bo); }
+#bombBtn.cool { opacity: calc(var(--bo) * .55); }
+/* stick on the right -> action buttons mirror to the left */
+body[data-jh=right] #runeBtn { right: auto; left: max(18px, env(safe-area-inset-left)); }
+body[data-jh=right] #bombBtn { right: auto; left: calc(max(18px, env(safe-area-inset-left)) + (var(--rb) + 10px) * var(--bs)); }
+body[data-jh=right] #emoBtn { right: auto; left: max(30px, env(safe-area-inset-left)); }
+#settings { z-index: 20; }
+#settings .panel { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.ctl { display: grid; grid-template-columns: 1fr 1.3fr 38px; align-items: center; gap: 8px; font-size: 9px; color: var(--dim); }
+.ctl select { grid-column: 2 / 4; }
+.ctl output { color: var(--ink); text-align: right; }
+.ctl.hide { display: none; }
+#padTest { width: 100%; height: 170px; background: #12161a; border: 2px dashed var(--line); touch-action: none; display: block; }
+#padNote { text-align: center; }

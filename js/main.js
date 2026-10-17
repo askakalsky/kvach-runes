@@ -3,7 +3,7 @@ import { Sim, RUNES, ITEMS, MODES, EVENTS, THEMES, GIFTS, STORYTELLERS, BOT_NAME
 import { Renderer, drawPawn, drawRuneIcon, weaponSprite } from './render.js';
 import { HATS, CAPES, TRAILS, ACH, loadStats, unlocked, reqText, recordResult } from './skins.js';
 import * as A from './audio.js';
-import { input, joy, initInput, readMove, fireHeld } from './input.js';
+import { input, joy, initInput, readMove, fireHeld, ctl, saveCtl, resetCtl, applyCtl, newStick, stickBegin, stickMove, stickVector, stickZone, drawStick } from './input.js';
 import { hostRoom, joinRoom, netAvailable } from './net.js';
 
 const $ = id => document.getElementById(id);
@@ -64,7 +64,10 @@ let cl = null;
 let view = null;
 
 // ---------- screens ----------
+let curScreen = 'menu';
 function show(name) {
+  curScreen = name;
+  $('settings').classList.add('hidden');
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('hidden', s.id !== name);
   $('hud').classList.toggle('hidden', name !== 'game' && name !== 'results');
   input.enabled = name === 'game';
@@ -200,6 +203,64 @@ function renderProfile() {
       el.appendChild(b);
     }
   }
+}
+
+// ---------- controls settings ----------
+const CTL_FIELDS = ['hand', 'type', 'size', 'reach', 'dead', 'opacity', 'zone', 'fx', 'fy', 'btn', 'btnop'];
+const pad = { st: newStick(), x: 0, y: 0, raf: 0 };
+function syncCtlUI() {
+  for (const k of CTL_FIELDS) {
+    const el = $('c_' + k);
+    el.value = ctl[k];
+    const out = el.parentElement.querySelector('output');
+    if (out) out.textContent = ctl[k] + (k === 'size' ? '' : '%');
+  }
+  $('r_zone').classList.toggle('hide', ctl.type !== 'float');
+  $('r_fx').classList.toggle('hide', ctl.type === 'float');
+  $('r_fy').classList.toggle('hide', ctl.type === 'float');
+}
+function openSettings() {
+  syncCtlUI();
+  $('settings').classList.remove('hidden');
+  input.enabled = false; joy.active = false;
+  cancelAnimationFrame(pad.raf); padLoop();
+}
+function closeSettings() {
+  $('settings').classList.add('hidden');
+  cancelAnimationFrame(pad.raf);
+  input.enabled = curScreen === 'game';
+}
+for (const k of CTL_FIELDS) $('c_' + k).addEventListener('input', e => {
+  ctl[k] = e.target.tagName === 'SELECT' ? e.target.value : +e.target.value;
+  saveCtl(); applyCtl(); syncCtlUI(); pad.st.active = false;
+});
+$('ctlReset').onclick = () => { resetCtl(); syncCtlUI(); };
+$('ctlBack').onclick = closeSettings;
+$('ctlMenuBtn').onclick = openSettings;
+$('ctlBtn').onclick = openSettings;
+// test pad: same stick logic on a small canvas, a dot runs where you steer
+const padEl = $('padTest');
+const padPos = e => { const r = padEl.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top, r.width, r.height]; };
+padEl.addEventListener('pointerdown', e => {
+  const [x, y, W, H] = padPos(e);
+  if (stickBegin(pad.st, x, y, W, H)) { pad.st.id = e.pointerId; padEl.setPointerCapture(e.pointerId); e.preventDefault(); }
+});
+padEl.addEventListener('pointermove', e => {
+  if (pad.st.active && e.pointerId === pad.st.id) { const [x, y, W, H] = padPos(e); stickMove(pad.st, x, y, W, H); e.preventDefault(); }
+});
+for (const ev of ['pointerup', 'pointercancel']) padEl.addEventListener(ev, e => { if (e.pointerId === pad.st.id) pad.st.active = false; });
+function padLoop() {
+  pad.raf = requestAnimationFrame(padLoop);
+  const r = padEl.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 2);
+  if (padEl.width !== Math.round(r.width * dpr)) { padEl.width = Math.round(r.width * dpr); padEl.height = Math.round(r.height * dpr); }
+  const g = padEl.getContext('2d'), W = r.width, H = r.height;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, padEl.width, padEl.height);
+  if (ctl.type === 'float') { const [z0, z1] = stickZone(W); g.fillStyle = 'rgba(224,178,82,.08)'; g.fillRect(z0 * dpr, 0, (z1 - z0) * dpr, padEl.height); }
+  const v = pad.st.active ? stickVector(pad.st) : { x: 0, y: 0 };
+  pad.x = Math.max(8, Math.min(W - 8, (pad.x || W / 2) + v.x * 2.2));
+  pad.y = Math.max(8, Math.min(H - 8, (pad.y || H / 2) + v.y * 2.2));
+  drawStick(g, pad.st, dpr, W, H);
+  g.fillStyle = '#7dff8a'; g.fillRect((pad.x - 5) * dpr, (pad.y - 5) * dpr, 10 * dpr, 10 * dpr);
 }
 
 // ---------- lobby ----------
@@ -977,6 +1038,7 @@ $('helpEvents').innerHTML = Object.values(EVENTS).map(e => `<li><b>${e.name}</b>
 $('helpMaps').innerHTML = Object.values(MAP_TYPES).map(n => `<b>${n}</b>`).join(' · ');
 
 applyTheme(settings.theme);
+applyCtl();
 addEventListener('resize', () => { R.resize(); if (R3) R3.resize(); });
 $('viewBtn').onclick = () => setView3d(!use3d);
 if (prof.view === '3d') setView3d(true);
