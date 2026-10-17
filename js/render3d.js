@@ -404,7 +404,7 @@ export class Renderer3D {
     this.barr = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: tx.barricade }), 400); W.add(this.barr);
     this.stoneDyn = new THREE.InstancedMesh(BOX, new THREE.MeshLambertMaterial({ map: tx.stone }), 400); W.add(this.stoneDyn);
     this.pellets = new THREE.InstancedMesh(SPH, new THREE.MeshBasicMaterial({ color: '#ffd9a0' }), Math.max(1, map.pellets.size)); W.add(this.pellets); this.pelN = -1;
-    this.spiral = map.type === 'arena' ? arenaSpiral() : [];
+    this.spiral = map.type === 'arena' ? arenaSpiral(map) : [];
     this.place = place;
 
     this.staticKids = W.children.slice();
@@ -537,7 +537,7 @@ export class Renderer3D {
       const i = wk;
       const x = i % MW + 0.5, y = ((i / MW) | 0) + 0.5;
       if (sdSet && sdSet.has(i)) this.place(this.stoneDyn, ns++, x, 0.65, y, 1, 1.3, 1);
-      else if (nb < 400) this.place(this.barr, nb++, x, 0.5, y, 0.95, 1, 0.95);
+      else if (nb < 400) { const ex = v.wallsExp && v.wallsExp.has(wk), sc = ex && Math.floor(t * 14) % 2 ? 0.5 : 1; this.place(this.barr, nb++, x, 0.5 * sc, y, 0.95, sc, 0.95); }
     }
     this.barr.count = nb; this.stoneDyn.count = Math.min(400, ns);
     this.barr.instanceMatrix.needsUpdate = true; this.stoneDyn.instanceMatrix.needsUpdate = true;

@@ -678,7 +678,7 @@ export class Renderer {
     this.map = map; this.layers = buildLayers(map, seed);
     this.decal = mk(MW * TS, MH * TS); this.anims = new Map(); this.flashes = new Map(); this.tracers = []; this.muzzles = [];
     this.pings = []; this.parts = []; this.texts = []; this.flames = []; this.bats = []; this.prints = []; this.flakes = []; this.lastPrint.clear(); this.camInit = false;
-    this.spiral = map.type === 'arena' ? arenaSpiral() : [];
+    this.spiral = map.type === 'arena' ? arenaSpiral(map) : [];
   }
   resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -892,10 +892,12 @@ export class Renderer {
         P(g, '#55515a', px + 7, py + 3, 1, 9); P(g, '#55515a', px + 1, py + 7, 14, 1);
         continue;
       }
+      if (v.wallsExp && v.wallsExp.has(wk)) g.globalAlpha = Math.floor(t * 14) % 2 ? 0.3 : 0.85;   // about to vanish
       P(g, 'rgba(0,0,0,.25)', px, py + 14, 16, 3);
       P(g, OL, px, py + 1, 16, 15);
       for (let k2 = 0; k2 < 4; k2++) { P(g, '#8b5a2b', px + k2 * 4 + 1, py + 2, 3, 13); P(g, '#a8733e', px + k2 * 4 + 1, py + 2, 1, 13); P(g, '#c79a5a', px + k2 * 4 + 2, py, 1, 2); }
       P(g, '#5a3b1e', px, py + 6, 16, 2); P(g, '#5a3b1e', px, py + 11, 16, 2);
+      g.globalAlpha = 1;
     }
     for (const tr of v.traps) {
       const mine = tr.owner === v.me, near = me && Math.hypot(me.x - tr.x, me.y - tr.y) < 28;

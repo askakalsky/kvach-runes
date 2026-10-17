@@ -1,4 +1,4 @@
-import { genMap, MAP_TYPES, isSolidT, tileIdx } from './map.js';
+import { genMap, MAP_TYPES, BOMBER_MAPS, isSolidT, tileIdx, MW, TS } from './map.js';
 import { Sim, RUNES, ITEMS, MODES, EVENTS, THEMES, GIFTS, STORYTELLERS, BOT_NAMES, BOT_NAMES_THEME, TEAM_COLS, TEAM_NAMES, KOTH_WIN, CTF_WIN, HEROES, HERO_KEYS, EMOTES, WEAPONS, DM_WIN, speedMult, slippery, moveBody, pickMapType, SUDDEN } from './sim.js';
 import { Renderer, drawPawn, drawRuneIcon, weaponSprite } from './render.js';
 import { HATS, CAPES, TRAILS, ACH, loadStats, unlocked, reqText, recordResult } from './skins.js';
@@ -297,12 +297,19 @@ function renderLobby(data) {
   $('waitMsg').classList.toggle('hidden', isHost);
   $('modeSel').value = settings.mode; $('botsIn').value = settings.bots; $('durSel').value = settings.dur;
   $('mapSel').value = settings.map; $('themeSel').value = settings.theme; $('teamSel').value = settings.teams;
-  const fixedMap = settings.mode === 'bomber' || settings.mode === 'pacman' || settings.mode === 'dm';
+  const bomberMode = settings.mode === 'bomber';
+  if (($('mapSel').dataset.g || 'n') !== (bomberMode ? 'b' : 'n')) {
+    $('mapSel').dataset.g = bomberMode ? 'b' : 'n';
+    $('mapSel').innerHTML = '<option value="random">Случайная</option>' + Object.entries(bomberMode ? BOMBER_MAPS : MAP_TYPES).map(([k, n]) => `<option value="${k}">${n}</option>`).join('');
+  }
+  if (settings.map !== 'random' && !(bomberMode ? BOMBER_MAPS : MAP_TYPES)[settings.map]) settings.map = 'random';
+  $('mapSel').value = settings.map;
+  const fixedMap = settings.mode === 'pacman' || settings.mode === 'dm';
   $('mapSel').disabled = fixedMap;
   $('teamRow').classList.toggle('hidden', settings.mode !== 'ctf');
   $('botsVal').textContent = settings.bots;
-  $('modeDesc').textContent = MODES[s.mode].desc + (s.mode === 'bomber' ? ' Карта — арена с ящиками.' : s.mode === 'pacman' ? ' Карта — неоновый лабиринт.' : '');
-  const mapName = s.mode === 'bomber' ? 'Арена' : s.mode === 'pacman' ? 'Лабиринт пакмена' : s.mode === 'dm' ? 'Неоновое здание' : MAP_TYPES[s.map] || 'случайная карта';
+  $('modeDesc').textContent = MODES[s.mode].desc + (s.mode === 'bomber' ? ' Три арены: классика, крест, кольцо.' : s.mode === 'pacman' ? ' Карта — неоновый лабиринт.' : '');
+  const mapName = s.mode === 'bomber' ? (BOMBER_MAPS[s.map] ? 'Арена «' + BOMBER_MAPS[s.map] + '»' : 'Арена') : s.mode === 'pacman' ? 'Лабиринт пакмена' : s.mode === 'dm' ? 'Неоновое здание' : MAP_TYPES[s.map] || 'случайная карта';
   $('clientMode').textContent = `${MODES[s.mode].name} · ${mapName} · ${s.dur / 60} мин · ботов: ${s.bots} · ${THEMES[s.theme] || ''}`;
   $('clientMode').classList.toggle('hidden', isHost);
   $('heroRow').classList.toggle('hidden', s.mode !== 'heroes');
@@ -336,7 +343,7 @@ function setupHostConn(conn) {
   });
 }
 function rosterInfo() { return sim.players.map(({ id, name, color, hair, hairCol, bot, skin, team, hero }) => ({ id, name, color, hair, hairCol, bot, skin, team, hero })); }
-function startMsg() { return { t: 'start', seed: sim.seed, mode: sim.mode, dur: sim.dur, mapType: sim.mapType, theme: sim.theme, roster: rosterInfo() }; }
+function startMsg() { return { t: 'start', seed: sim.seed, mode: sim.mode, dur: sim.dur, mapType: sim.mapType, variant: sim.variant, theme: sim.theme, roster: rosterInfo() }; }
 
 function onHostMsg(conn, m) {
   if (!m || typeof m !== 'object') return;
@@ -391,7 +398,8 @@ function startMatch() {
     bots.push({ id: 'b' + i, name: names.pop() || 'Бот' + i, color: COLORS[(i * 3 + 1) % COLORS.length], hair: i % 4, hairCol: HAIRCOLS[i % HAIRCOLS.length], bot: true });
   const seed = Math.floor(Math.random() * 1e9);
   const humans = roster.map(r => ({ ...r, team: undefined }));
-  sim = new Sim({ ...settings, mapType: pickMapType(settings.mode, settings.map), storyteller: pick(STORYTELLERS) }, [...humans, ...bots], seed, myId);
+  const variant = settings.mode === 'bomber' ? (BOMBER_MAPS[settings.map] ? settings.map : pick(Object.keys(BOMBER_MAPS))) : 'arena';
+  sim = new Sim({ ...settings, mapType: pickMapType(settings.mode, settings.map), variant, storyteller: pick(STORYTELLERS) }, [...humans, ...bots], seed, myId);
   pendingFx = []; results = null;
   setMapAll(sim.map, seed);
   broadcast(startMsg());
@@ -422,7 +430,7 @@ function onClientMsg(m) {
       renderLobby(m); show('lobby');
       break;
     case 'start':
-      cl = { map: genMap(m.seed, m.mapType, m.theme, m.mode), mode: m.mode, dur: m.dur, roster: new Map(m.roster.map(r => [r.id, r])), snaps: [], latest: null, own: null, useSeq: 0, bombSeq: 0, fireSeq: 0, useAt: 0, lastSend: 0, localFx: {}, broken: 0, eaten: 0 };
+      cl = { map: genMap(m.seed, m.mapType, m.theme, m.mode, m.variant), mode: m.mode, dur: m.dur, roster: new Map(m.roster.map(r => [r.id, r])), snaps: [], latest: null, own: null, useSeq: 0, bombSeq: 0, fireSeq: 0, useAt: 0, lastSend: 0, localFx: {}, broken: 0, eaten: 0 };
       setMapAll(cl.map, m.seed);
       enterGame(m.mode, m.theme);
       break;
@@ -440,6 +448,7 @@ function onSnap(m) {
   cl.latest = m;
   cl.map.dyn.clear();
   for (const i of m.w) cl.map.dyn.set(i, 1);
+  cl.wexp = new Set(m.we || []);
   if (m.cb) { for (let k = cl.broken; k < m.cb.length; k++) cl.map.crates.delete(m.cb[k]); cl.broken = m.cb.length; }
   if (m.pe) { for (let k = cl.eaten; k < m.pe.length; k++) cl.map.pellets.delete(m.pe[k]); cl.eaten = m.pe.length; }
   for (const f of m.fx || []) handleFx(f);
@@ -551,6 +560,7 @@ function handleFx(f) {
       break;
     case 'newbomb': FX().text(f.x, f.y - 26, 'БОМБА!', '#ffd23f'); if (mine) { center('БОМБА У ТЕБЯ!', '#ffd23f'); A.sfx('itme'); vib(150); } break;
     case 'bombset': A.sfx('bombset', vol); break;
+    case 'wallup': for (const ti of f.t) FX().burst((ti % MW) * TS + 8, ((ti / MW) | 0) * TS + 12, '#c9b08a', 5, 30, 0.45); break;
     case 'blast':
       FX().blast(f.tl); FX().burst(f.x, f.y, '#ffb03b', 16, 80, 0.5, 2); A.sfx('blast', Math.max(vol, 0.25));
       if (vol > 0.5) FX().shake = Math.max(FX().shake, 0.5 * vol);
@@ -909,7 +919,7 @@ function hostView() {
     mobs: sim.mobs.map(m => ({ x: m.x, y: m.y, kind: m.kind, s: m.state === 'fright' ? 1 : m.state === 'dead' ? 2 : 0 })), fright: sim.fright,
     flags: sim.mode === 'ctf' ? sim.flags : null, teamScore: sim.teamScore, zone: sim.zone || null, hideT: sim.hideT, whistleT: sim.whistleT, emotes,
     pickups: sim.pickups ? sim.pickups.filter(k => !k.wait) : null, thrown: sim.thrown || null,
-    walls: [...sim.map.dyn.keys()], event: sim.event && sim.event.k,
+    walls: [...sim.map.dyn.keys()], wallsExp: new Set([...sim.map.dyn].filter(([k, v]) => v < 1.5).map(([k]) => k)), event: sim.event && sim.event.k,
     time: sim.time, phase: sim.phase, fuse: sim.fuse, mode: sim.mode, me: myId,
   };
 }
@@ -961,7 +971,7 @@ function clientView(now) {
     sd: L.sd || 0,
     pickups: L.pk ? L.pk.map(k => ({ id: k[0], x: k[1], y: k[2], k: k[3] })) : null,
     thrown: L.tw ? L.tw.map(k => ({ id: k[0], x: k[1], y: k[2], k: k[3] })) : null,
-    walls: L.w, event: L.ev && L.ev.k, time: L.tm, phase: L.ph, fuse: L.fu, mode: cl.mode, me: myId,
+    walls: L.w, wallsExp: cl.wexp, event: L.ev && L.ev.k, time: L.tm, phase: L.ph, fuse: L.fu, mode: cl.mode, me: myId,
   };
 }
 

@@ -231,7 +231,8 @@ export class Sim {
     this.theme = settings.theme || '';
     this.mapType = settings.mapType;
     this.storyteller = settings.storyteller || pick(STORYTELLERS);
-    this.map = genMap(seed, this.mapType, this.theme, this.mode);
+    this.variant = settings.variant || 'arena';
+    this.map = genMap(seed, this.mapType, this.theme, this.mode, this.variant);
     this.players = []; this.runes = []; this.traps = []; this.decoys = []; this.fxq = [];
     this.puddles = []; this.meteors = []; this.spirits = []; this.bombs = []; this.flames = []; this.items = []; this.broken = [];
     this.gifts = []; this.mobs = []; this.eaten = []; this.flags = []; this.teamScore = [0, 0];
@@ -365,6 +366,18 @@ export class Sim {
     const x0 = tx * TS - R - 1, y0 = ty * TS - R - 1, x1 = tx * TS + TS + R + 1, y1 = ty * TS + TS + R + 1;
     if ([...this.players.filter(p => p.alive), ...this.decoys].some(p => p.x > x0 && p.x < x1 && p.y > y0 && p.y < y1)) return;
     this.map.dyn.set(z > 0 ? i + z * MW * MH : i, life);
+    return i + 1;
+  }
+  // a barricade across the direction you face, two tiles behind you; `half` tiles to each side, gone after `life` seconds
+  buildWall(p, half, life) {
+    const z = p.z | 0, horiz = Math.abs(p.fdy) >= Math.abs(p.fdx), placed = [];
+    for (const back of [30, 22, 15]) {
+      const tx = Math.floor((p.x - p.fdx * back) / TS), ty = Math.floor((p.y - p.fdy * back) / TS);
+      if (solidIdx(this.map, ty * MW + tx, z)) continue;            // a wall right behind you: try a closer spot
+      for (let k = -half; k <= half; k++) { const r = this.placeWall(tx + (horiz ? k : 0), ty + (horiz ? 0 : k), life, z); if (r) placed.push(r - 1); }
+      if (placed.length) break;
+    }
+    if (placed.length) this.fx('wallup', p.x, p.y, { t: placed });
   }
 
   // push q away from (x,y) by up to dist px, stopping at walls
@@ -397,12 +410,7 @@ export class Sim {
       case 'runner': f.dash = 0.32; break;
       case 'ninja': f.invis = 3; break;
       case 'mage': { const keep = p.rune; p.rune = 'blink'; this.useRune(p); p.st.runes--; p.rune = keep; break; }
-      case 'builder': {
-        const tx = Math.floor((p.x - p.fdx * 20) / TS), ty = Math.floor((p.y - p.fdy * 20) / TS);
-        const horiz = Math.abs(p.fdy) >= Math.abs(p.fdx);
-        for (let i = -2; i <= 2; i++) this.placeWall(tx + (horiz ? i : 0), ty + (horiz ? 0 : i), 6, p.z | 0);
-        break;
-      }
+      case 'builder': this.buildWall(p, 2, 7); break;
       case 'frost':
         for (const q of this.players) if (q !== p && q.alive && q.fx.shield <= 0 && d2(p, q) < 48 * 48) { q.fx.frozen = Math.max(q.fx.frozen, 1.3); q.vx = q.vy = 0; }
         break;
@@ -461,12 +469,7 @@ export class Sim {
       }
       case 'trap': this.traps.push({ id: this.uid++, x: p.x, y: p.y, owner: p.id, arm: 0.6, life: 30 }); break;
       case 'slime': this.puddles.push({ id: this.uid++, x: p.x, y: p.y, owner: p.id, life: 9 }); break;
-      case 'wall': {
-        const tx = Math.floor((p.x - p.fdx * 20) / TS), ty = Math.floor((p.y - p.fdy * 20) / TS);
-        const horiz = Math.abs(p.fdy) >= Math.abs(p.fdx);
-        for (let i = -1; i <= 1; i++) this.placeWall(tx + (horiz ? i : 0), ty + (horiz ? 0 : i), 6, p.z | 0);
-        break;
-      }
+      case 'wall': this.buildWall(p, 1, 6); break;
       case 'decoy':
         this.decoys.push({ id: this.uid++, x: p.x, y: p.y, fdx: p.fdx, fdy: p.fdy, owner: p.id, life: 5, m: 1 });
         f.invis = Math.max(f.invis, 1.2);
@@ -543,7 +546,7 @@ export class Sim {
     this.fx('hit', p.x, p.y, { id: p.id, by: byId || '' });
     if (p.lives <= 0) { this.eliminate(p); return true; }
     const spot = this.respawnSpot(p);
-    if (spot) this.place(p, spot);
+    if (spot) { this.place(p, spot); if (this.mode === 'bomber') this.clearAround(tileIdx(p.x, p.y)); }
     p.fx.shield = 2.5;
     return true;
   }
@@ -905,6 +908,7 @@ export class Sim {
       const spots = this.spread(alive.length, [], this.mode === 'bomber' ? this.freeSpots() : null);
       alive.forEach((p, i) => {
         this.place(p, spots[i]);
+        if (this.mode === 'bomber') this.clearAround(tileIdx(p.x, p.y));
         if (p.it) p.fx.stun = Math.max(p.fx.stun, 1); else p.tagCd = Math.max(p.tagCd, 1.5);
       });
     }
@@ -1148,7 +1152,7 @@ export class Sim {
     for (const [k, v] of map.dyn) { if (v - dt <= 0) map.dyn.delete(k); else map.dyn.set(k, v - dt); }
 
     if (bomber && this.time < SUDDEN) {
-      if (!this.sd) { this.sd = arenaSpiral(); this.sdN = 0; this.sdT = 0; this.fx('sudden', 0, 0, {}); }
+      if (!this.sd) { this.sd = arenaSpiral(this.map); this.sdN = 0; this.sdT = 0; this.fx('sudden', 0, 0, {}); }
       this.sdT -= dt;
       while (this.sdT <= 0 && this.sdN < this.sd.length) {
         this.sdT += 0.32;
@@ -1334,6 +1338,7 @@ export class Sim {
       sp: this.spirits.map(s2 => [s2.id, r1(s2.x), r1(s2.y)]),
       gf: this.gifts.map(g => [g.id, g.x, g.y, g.c]),
       w: [...this.map.dyn.keys()],
+      we: [...this.map.dyn].filter(([k, v]) => v < 1.5).map(([k]) => k),
     };
     if (bomber) {
       s.bm = this.bombs.map(b => [b.id, b.x, b.y, r2(b.t), b.owner]);

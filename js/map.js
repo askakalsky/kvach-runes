@@ -4,6 +4,7 @@ export const T = {
   GRASS: 0, DIRT: 1, WALL: 2, WATER: 3, BUSH: 4, ICE: 5, TREE: 6, FLOOR: 7, PORTAL: 8,
   HEDGE: 9, ROAD: 10, BRIDGE: 11, TOMB: 12, WHEAT: 13, DECOR: 14, SAND: 15, MUSH: 16, STAIRS: 17, VOID: 18,
 };
+export const BOMBER_MAPS = { arena: 'Классика', cross: 'Крест', ring: 'Кольцо' };
 export const MAP_TYPES = {
   meadow: 'Луг', village: 'Деревня', maze: 'Лабиринт', islands: 'Острова', graveyard: 'Кладбище',
   beach: 'Пляж', magic: 'Волшебный лес', fort: 'Двухэтажная крепость',
@@ -436,26 +437,35 @@ function genNeon(c) {
   return room;
 }
 
-function genArena(c) {
+// bomberman arenas: classic grid, a cross-shaped one, and a ring around a solid fortress
+function genArena(c, variant = 'arena') {
   const { R, g } = c;
   g.fill(T.TREE);
-  const { x0, y0, x1, y1 } = ARENA;
+  const { x0, y0, x1, y1 } = ARENA, cx = (x0 + x1) >> 1, cy = (y0 + y1) >> 1;
+  const inRegion = (x, y) => {
+    if (x < x0 || x > x1 || y < y0 || y > y1) return false;
+    if (variant === 'cross') return Math.abs(y - cy) <= 4 || Math.abs(x - cx) <= 4;
+    return true;
+  };
+  const block = (x, y) => variant === 'ring' && Math.abs(x - cx) <= 7 && Math.abs(y - cy) <= 4;
   const crates = [];
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    if (!inRegion(x, y)) continue;
     const i = y * MW + x;
-    if (x === x0 || y === y0 || x === x1 || y === y1) { g[i] = T.WALL; continue; }
+    const edge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !inRegion(x + dx, y + dy));
+    if (edge || block(x, y)) { g[i] = T.WALL; continue; }
     if ((x - x0) % 2 === 0 && (y - y0) % 2 === 0) { g[i] = T.WALL; continue; }
     g[i] = T.GRASS;
-    if (R() < 0.6) crates.push(i);
+    if (R() < (variant === 'arena' ? 0.6 : 0.56)) crates.push(i);
   }
   return crates;
 }
 
 // sudden-death order for the arena: outer ring first, spiralling inward
-export function arenaSpiral() {
+export function arenaSpiral(map) {
   const out = [];
   let x0 = ARENA.x0 + 1, y0 = ARENA.y0 + 1, x1 = ARENA.x1 - 1, y1 = ARENA.y1 - 1;
-  const add = (x, y) => { if ((x - ARENA.x0) % 2 || (y - ARENA.y0) % 2) out.push(y * MW + x); };
+  const add = (x, y) => { if (((x - ARENA.x0) % 2 || (y - ARENA.y0) % 2) && (!map || !isSolidT(map.g[y * MW + x]))) out.push(y * MW + x); };
   while (x0 < x1 - 2 && y0 < y1 - 2) {
     for (let x = x0; x <= x1; x++) add(x, y0);
     for (let y = y0 + 1; y <= y1; y++) add(x1, y);
@@ -484,11 +494,11 @@ function carveBases(c) {
   return bases.map(([x, y]) => [x * TS + 8, y * TS + 8]);
 }
 
-export function genMap(seed, type = 'meadow', theme = '', mode = '') {
+export function genMap(seed, type = 'meadow', theme = '', mode = '', variant = 'arena') {
   const c = makeCtx(seed), g = c.g;
   let bases = null;
   let crates = [], pac = null, room = null;
-  if (type === 'arena') crates = genArena(c);
+  if (type === 'arena') crates = genArena(c, variant);
   else if (type === 'pacman') pac = genPacman(c);
   else if (type === 'neon') room = genNeon(c);
   else {
